@@ -1,13 +1,9 @@
 from agno.playground import Playground, serve_playground_app
-from agent import rag_agent
+from agents.rag_agent import rag_agent
 
-# Create the playground app
+# Create the playground app with just the agents parameter
 app = Playground(
     agents=[rag_agent],
-    # Enable file upload in the playground
-    enable_file_upload=True,
-    # Specify allowed file types
-    allowed_file_types=[".pdf"],
 ).get_app()
 
 
@@ -17,4 +13,4 @@ if __name__ == "__main__":
     os.makedirs("uploaded_pdfs", exist_ok=True)
     
     # Start the playground
-    serve_playground_app("app:app", reload=True)
+    serve_playground_app("playground:app", reload=True, host="0.0.0.0", port=8000)
