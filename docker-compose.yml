@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AGNO_API_KEY=${AGNO_API_KEY}
+      - endpoint_url=${STORAGE_ENDPOINT}
+      - aws_access_key_id=${STORAGE_ACCESS_KEY}
+      - aws_secret_access_key=${STORAGE_SECRET_KEY}
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - __pycache__/
+            
+        - action: rebuild
+          path: requirements.txt
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: agnohq/pgvector:16
+    environment:
+      POSTGRES_DB: agno
+      POSTGRES_USER: agno
+      POSTGRES_PASSWORD: agno
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agno"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
