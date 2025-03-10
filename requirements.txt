@@ -2,12 +2,14 @@ agno
 openai 
 pgvector 
 pypdf 
+pydantic 
 psycopg[binary] 
 sqlalchemy 
 fastapi 
 uvicorn 
 chonkie
 tiktoken
+python-docx
 
 ## PDF API  
 httpx 
