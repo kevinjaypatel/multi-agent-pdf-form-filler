@@ -13,28 +13,27 @@ from agno.document.chunking.semantic import SemanticChunking
 from agno.embedder.openai import OpenAIEmbedder 
 
 db_url = "postgresql+psycopg://agno:agno@db/agno"
-
+ 
 knowledge_base = CombinedKnowledgeBase(
     sources=[
-        PDFKnowledgeBase(
-            vector_db=PgVector(table_name="recipes_pdf", db_url=db_url), path=""
-        ),
-        CSVKnowledgeBase(
-            vector_db=PgVector(table_name="recipes_csv", db_url=db_url), path=""
-        ),
-        DocxKnowledgeBase(
-            vector_db=PgVector(table_name="recipes_docx", db_url=db_url), path=""
-        ),
+        # PDFKnowledgeBase(
+        #     vector_db=PgVector(table_name="recipes_pdf", db_url=db_url), path=""
+        # ),
+        # CSVKnowledgeBase(
+        #     vector_db=PgVector(table_name="recipes_csv", db_url=db_url), path=""
+        # ),
+        # DocxKnowledgeBase(
+        #     vector_db=PgVector(table_name="recipes_docx", db_url=db_url), path=""
+        # ),
         JSONKnowledgeBase(
-            vector_db=PgVector(table_name="recipes_json", db_url=db_url), path=""
+            vector_db=PgVector(table_name="user_profile_json", db_url=db_url), path=""
         ),
         TextKnowledgeBase(
-            vector_db=PgVector(table_name="recipes_text", db_url=db_url), path=""
+            vector_db=PgVector(table_name="user_profile_text", db_url=db_url), path=""
         ),
-        
     ],
     vector_db=PgVector(
-        table_name="recipes_combined", 
+        table_name="user_profile_combined", 
         db_url=db_url,
         search_type=SearchType.hybrid,
         embedder=OpenAIEmbedder(id="text-embedding-3-small"),
