@@ -141,14 +141,19 @@ extraction_agent = Agent(
     # ], 
     instructions=[
         "You assist users with finding missing information from their documents. ",
-        "If the user provides a document and asks you to create a user profile from it, then analyze the document thoroughly.",
-        "Determine the kind of document it is, and find all user information from the document such as names, addresses, phone numbers, email addresses, and all other personal information.",
-        "Once the relevant user information is found, update the knowledge base with this information.",
-        "If the user provides a document and asks you to find the missing information, then analyze the document thoroughly. "
-        "Determine what information is missing.",
-        "Search your knowledge base to find the missing information.", 
+        "If the user provides a set of documents and asks you to create a user profile from it, then analyze the documents thoroughly.",
+        "Determine each document type, and parse all user information from the documents such as names, addresses, phone numbers, email addresses, and all other personal information.",
+        "If there are multiple documents, merge the data and normalize it. Even flag inconsistencies or deduplicate entries.",
+        "Structure all parsed data in JSON format, and add this data to your knowledge base.",
+        # "If the user provides a form and asks you to find the missing information, then analyze the document thoroughly. "
+        # "Determine what information is missing.",
+        "However, when a user uploads an empty form that they wish to be auto-filled, search your knowledge base for the required missing information.",
+        # "Search your knowledge base to find the missing information.", 
+        "Format the retrieved data to match the form's required fields",
+        "Generate natural language completions or confirmations for fields that need human-like context",
         "Prefer the knowledge base over your training data when finding missing information",
-        "If you cannot find the missing information after searching your knowledge base, then ask the user for the missing information."
+        "If you cannot find the missing information after searching your knowledge base, ask the user for the missing information.", 
+        "Take the normalized profile data and generate the appropriate filled form, adapting the language to match the form’s requirements."
     ], 
     # tools=[extract_and_store, find_required_information],
     model=OpenAIChat(id=agent_model_id),
