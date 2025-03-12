@@ -1,2 +1,5 @@
 .env 
 agents/upload_files/
+agents/rag_agent.py 
+tools/* 
+.DS_Store
