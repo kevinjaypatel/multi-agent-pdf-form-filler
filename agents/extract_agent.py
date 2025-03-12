@@ -5,6 +5,11 @@ from textwrap import dedent
 from agno.storage.agent.postgres import PostgresAgentStorage
 from datetime import datetime
 import json
+import os
+
+# Agent Tools 
+from agno.tools.dalle import DalleTools 
+from PIL import Image, ImageDraw, ImageFont 
 
 # Import the shared knowledge base and extracted_info_kb
 from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
@@ -126,41 +131,69 @@ def extract_and_store():
     
     return response, metadata
 
+def edit_form(image_path: str, new_values: dict, font_path: str = "arial.ttf", font_size: int = 18) -> str: 
+    image = Image.open(image_path)
+    draw = ImageDraw.Draw(image) 
+
+    font = ImageFont.truetype(font_path, font_size) 
+
+    for field, info in new_values.items(): 
+        position = tuple(info["position"])
+
+        # Erase old text (draw a white box over the field)
+        draw.rectangle([position, (position[0] + 200, position[1] + 40)], fill="white")
+
+        # Insert new text
+        draw.text(position, info["new_value"], font=font, fill="black")
+
+    # Save the edited image
+    updated_image_filename = "edited_form.jpg"
+    output_dir = "static"
+    os.makedirs(output_dir, exist_ok=True)
+    updated_image_path = os.path.join(output_dir, updated_image_filename)
+    image.save(updated_image_path) 
+    
+    # Return a markdown image link that can be displayed in the agent's response
+    image_url = f"/static/edited_form.jpg"
+    print(f"Edited tax form saved at {updated_image_path}")
+    return f"![Edited Form]({image_url})"
+
 # Create the extraction agent
 extraction_agent = Agent(
     name="Extraction Agent",
     description="You are an expert document analyzer specialized in extracting and finding user information.",
-    # instructions=[
-    #     "Use the extract_and_store tool to extract user information from documents", 
-    #     "Use the find_required_information tool to find the user's missing information from their documents",
-    #     "When extracting information from the knowledge base, be thorough and identify all relevant user details",
-    #     "When finding missing information, only check the knowledge base before indicating information is missing",
-    #     "Always structure your responses as valid JSON objects",
-    #     "Track metadata for all extracted information including source and timestamp",
-    #     "When a user uploads a document, it will be automatically added to your knowledge base"
-    # ], 
-    instructions=[
-        "You assist users with finding missing information from their documents. ",
-        "If the user provides a set of documents and asks you to create a user profile from it, then analyze the documents thoroughly.",
-        "Determine each document type, and parse all user information from the documents such as names, addresses, phone numbers, email addresses, and all other personal information.",
-        "If there are multiple documents, merge the data and normalize it. Even flag inconsistencies or deduplicate entries.",
-        "Structure all parsed data in JSON format, and add this data to your knowledge base.",
-        # "If the user provides a form and asks you to find the missing information, then analyze the document thoroughly. "
-        # "Determine what information is missing.",
-        "However, when a user uploads an empty form that they wish to be auto-filled, search your knowledge base for the required missing information.",
-        # "Search your knowledge base to find the missing information.", 
-        "Format the retrieved data to match the form's required fields",
-        "Generate natural language completions or confirmations for fields that need human-like context",
-        "Prefer the knowledge base over your training data when finding missing information",
-        "If you cannot find the missing information after searching your knowledge base, ask the user for the missing information.", 
-        "Take the normalized profile data and generate the appropriate filled form, adapting the language to match the form’s requirements."
-    ], 
-    # tools=[extract_and_store, find_required_information],
+    instructions=dedent("""\
+        If the user provides a set of documents and asks you to create a user profile from it, then follow these stes: 
+        1. Analyze each document thoroughly and parse all user information such as names, addresses, phone numbers, email addresses, and all other personal information, 
+        and categorize each document by type. If there are multiple documents, merge the data, and normalize the user profile. Make sure to flag inconsistencies or deduplicate entries.
+        2. Finally, structure all parsed data in JSON format, and add it to your knowledge base.
+        
+        If the user uploads an empty or partially filled form that they want filled, then follow these steps:                 
+        1. Identify missing fields such as missing names, addresses, phone numbers, email addresses, and all other personal information. 
+        2. Note the position coordinates for each of the missing fields.
+        3. Format the missing information with the position coordinates in JSON format.  
+        4. Search your knowledge base to find the missing information  
+        If you cannot find any missing information, ask the user for the missing information. Do not make up information.
+        6. Update the JSON format to include new_values to be filled for the missing fields 
+
+        For example:    
+                        
+        ```json
+            new_values = {
+                "Full Name": {"position": [150, 200], "new_value": "Jane Doe"},
+                "Total Income": {"position": [300, 500], "new_value": "$75,000"},
+                "Filing Status": {"position": [250, 300], "new_value": "Single"}
+            }
+        ```
+        7. Finally, use the `edit_form` tool with these new values to edit the users form. 
+         
+    """), 
     model=OpenAIChat(id=agent_model_id),
     knowledge=extract_agent_knowledge_base,             # Provides the agent with a knowledge base to search and update               
     search_knowledge=True,                # Adds a tool allowing the agent to search the knowledge base 
     update_knowledge=True,                # Adds a tool allowing the agent to update the knowledge base
     read_chat_history=True,
+    tools=[edit_form],
     # add_context_instructions=True, 
     # add_references=True,
     show_tool_calls=True, 
