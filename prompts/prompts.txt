@@ -1,0 +1,6 @@
+## Extract Agent Prompt  
+Can you please extract and parse the information from this document and add it to your knowledge base?  
+
+## Edit Agent Prompt 
+Can you please find the missing information from this document, and search your knowledge base for the information? 
+Please edit the document when you find the missing information. 
