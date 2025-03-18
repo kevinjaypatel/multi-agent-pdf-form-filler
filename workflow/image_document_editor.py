@@ -3,16 +3,19 @@ from typing import Iterator
 from agno.workflow import Workflow 
 from agno.models.openai import OpenAIChat  
 from textwrap import dedent 
-from knowledge.combined_knowledge import knowledge_base as image_document_editor_knowledge_base
+# from knowledge.combined_knowledge import knowledge_base as image_document_editor_knowledge_base
 from pydantic import BaseModel, Field 
+from agno.playground import Playground, serve_playground_app
 
 class UserActionClassification(BaseModel): 
     upload_documents: bool = Field(..., description="True if the user wants to upload documents, or if the knowledge base needs to be updated")
     fill_out_form: bool = Field(..., description="True if the user needs a form filled out")
 
+def classify_user_action(user_request: str) -> UserActionClassification:
+    print(user_request) 
+     
 
 class ImageDocumentEditor(Workflow): 
-
     classification_agent: Agent = Agent(
         model=OpenAIChat("o3-mini"),
         name="Classification Agent", 
@@ -24,7 +27,7 @@ class ImageDocumentEditor(Workflow):
         1. Initially, the user uploads a batch of documents (phone bills, w2 forms, resumes, etc)
         The documents can be any type (e.g. pdf, jpg, png, etc)
         2. Next, the user uploads a form that they want filled out (e.g. a job application, a resume, a 1040 tax form, etc)
-        The image document editor fills out the form 
+        The image document editor fills out the form. 
                             
         Helpful tips for the user: 
         - Upload documents relative to the form that needs to be filled for the most accurate results   
@@ -32,10 +35,11 @@ class ImageDocumentEditor(Workflow):
 
         Finally, your job is to classify the users request.  
         1. Determine if the user wants to upload documents, or is requesting a form to be filled out.     
-        Currently we only fill one form at a time. 
+        Currently we only fill one form at a time, make sure to let the user know this.  
         """), 
         response_model=UserActionClassification, 
-        structured_output=True, 
+        structured_outputs=True, 
+        stream=True, 
     )
 
     image_document_uploader: Agent = Agent( 
@@ -113,7 +117,7 @@ class ImageDocumentEditor(Workflow):
                 }
             }
         """), 
-        knowledge=image_document_editor_knowledge_base,
+        # knowledge=image_document_editor_knowledge_base,
         update_knowledge=True,  
     )
 
@@ -128,12 +132,24 @@ class ImageDocumentEditor(Workflow):
     def run(self, user_request: str) -> Iterator[RunResponse]: 
 
         # Step 1: Classify the user's request 
-        request: RunResponse = self.classification_agent.run(user_request) 
+        response: RunResponse = self.classification_agent.run(user_request) 
+        print(response.content)
+        # if request.upload_documents: 
+        #     # yield self.image_document_uploader.run(user_request)
+        #     pass 
+        # else: 
+        #     # yield self.image_document_editor.run(user_request) 
+        #     pass 
 
-        if request.upload_documents: 
-            yield self.image_document_uploader.run(user_request)
-        else: 
-            yield self.image_document_editor.run(user_request) 
+workflow = ImageDocumentEditor() 
+classification_agent = workflow.classification_agent 
+
+app = Playground(agents=[classification_agent]).get_app() 
+
+if __name__ == "__main__": 
+    serve_playground_app('image_document_editor:app', reload=True, host="0.0.0.0", port=8000) 
+
+
 
     
 
