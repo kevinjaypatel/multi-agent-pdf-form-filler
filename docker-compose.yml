@@ -6,6 +6,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AGNO_API_KEY=${AGNO_API_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - endpoint_url=${STORAGE_ENDPOINT}
       - aws_access_key_id=${STORAGE_ACCESS_KEY}
       - aws_secret_access_key=${STORAGE_SECRET_KEY}

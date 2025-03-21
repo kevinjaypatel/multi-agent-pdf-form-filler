@@ -1,7 +1,7 @@
 from agno.agent import Agent 
 from agno.playground import Playground, serve_playground_app
 from agents.rag_agent import rag_agent
-from agents.extract_agent import document_upload_agent, document_edit_agent 
+from agents.extract_agent import document_upload_agent, document_search_agent, document_edit_agent
 from agno.models.openai import OpenAIChat
 
 # Agent Team 
@@ -18,7 +18,7 @@ agent_team = Agent(
 # Create the playground app with just the agents parameter
 app = Playground(
     # agents=[extraction_agent, rag_agent],
-    agents=[document_upload_agent, document_edit_agent],
+    agents=[document_upload_agent, document_search_agent, document_edit_agent],
 
 ).get_app()
 

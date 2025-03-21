@@ -1,15 +1,19 @@
 from agno.agent import Agent, RunResponse 
 from agno.playground.playground import Playground
-from agno.models.openai import OpenAIChat
 from textwrap import dedent
 from agno.storage.agent.postgres import PostgresAgentStorage
 from datetime import datetime
 import json
 import os
 
+# Models 
+from agno.models.openai import OpenAIChat
+from agno.models.mistral import MistralChat 
+
 # Agent Tools 
 from agno.tools.dalle import DalleTools 
 from PIL import Image, ImageDraw, ImageFont 
+# from tools.edit_form import detect_missing_fields
 
 # Import the shared knowledge base and extracted_info_kb
 from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
@@ -252,8 +256,8 @@ document_upload_agent = Agent(
     # response_model=UserProfileDocument
 )
 
-document_edit_agent = Agent(
-    name="Document Edit Agent",
+document_search_agent = Agent(
+    name="Document Search Agent",
     description="You are an elite document intelligence system specializing in perfect form completion with unmatched accuracy.",
     instructions=dedent("""\
         The following statement lists your primary task:
@@ -484,7 +488,25 @@ document_edit_agent = Agent(
     debug_mode=True, 
 )
 
-app = Playground(agents=[document_upload_agent, document_edit_agent]).get_app()
+mistral_api_key = os.getenv('MISTRAL_API_KEY')
+document_edit_agent = Agent(
+    name='Document Edit Agent', 
+    description='You specialize in editing documents', 
+    model=MistralChat(id='pixtral-12b-2409', api_key=mistral_api_key),
+    instructions=dedent("""\
+    "Analyze image documents and detect all form fields where information is missing. For each missing field, return:
+
+    The field label (if visible).
+    The bounding box coordinates (x, y, width, height).
+    Where x, y is the upper left corner of the bounding box coordinate 
+    Any additional context about the field. 
+                        
+    Make sure to return the output in JSON format
+    """),
+    tools=[],
+)
+
+app = Playground(agents=[document_upload_agent, document_search_agent]).get_app()
 
 if __name__ == "__main__":
     document_upload_agent.print_response(
