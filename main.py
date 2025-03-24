@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from typing import Dict, Optional, Any 
 import json 
 # Extract Agent 
-from agents.extract_agent import extraction_agent 
+# from agents.extract_agent import extraction_agent 
+from agents.extract_agent import document_upload_agent
 
 # Vercel AI SDK  
 # from ai import StreamingResponse as VercelStreamingResponse 
@@ -33,17 +34,23 @@ agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     description="You are a helpful assistant.",
     markdown=True,
-
 )
 
 async def generate_stream(message, conversation_id=None, metadata=None): 
     """Generate a stream of responses from the agent."""
-    response_stream = extraction_agent.run(
+    response_stream = document_upload_agent.run(
         message, 
         conversation_id=conversation_id,  
         metadata=metadata,  
         stream=True
     )
+
+    # response_stream = agent.run(
+    #     message, 
+    #     conversation_id=conversation_id,  
+    #     metadata=metadata,  
+    #     stream=True
+    # )
 
     for chunk in response_stream: 
         if hasattr(chunk, 'content') and chunk.content: 
