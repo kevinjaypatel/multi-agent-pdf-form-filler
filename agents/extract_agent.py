@@ -24,6 +24,11 @@ from output.output import UserProfileDocument
 db_url = "postgresql+psycopg://agno:agno@db/agno"
 agent_model_id = "gpt-4o"
 
+storage = PostgresStorage(
+        table_name="extraction_agent_sessions",
+        db_url=db_url
+)
+
 def find_required_information(document_path: str=None) -> str: 
     """
     Find the required user information from the document
@@ -164,8 +169,9 @@ def edit_form(image_path: str, new_values: dict, font_path: str = "arial.ttf", f
 
 # Create the extraction agent
 document_upload_agent = Agent(
-    name="Extraction Agent",
-    description="You are an elite document intelligence system specializing in perfect information extraction with unmatched accuracy.",
+    name="Document Upload Agent",
+    session_id="pdf_document_editing_session",
+    description="You are an expert in analyzing and extracting user information from documents",
     instructions=dedent("""\
         Your primary function is the following:
         1. Creating and maintaining a comprehensive knowledge base from user documents
@@ -248,23 +254,14 @@ document_upload_agent = Agent(
     show_tool_calls=True, 
     markdown=True,
     debug_mode=True,
-    # Store conversations in postgres
-    storage=PostgresAgentStorage(
-        table_name="extraction_agent_sessions",
-        db_url="postgresql+psycopg://agno:agno@db/agno"
-    ),
-    # response_model=UserProfileDocument
+    storage=storage
 )
 
 document_search_agent = Agent(
     name="Document Search Agent",
-    description="You are an elite document intelligence system specializing in perfect form completion with unmatched accuracy.",
-    instructions=dedent("""\
-        The following statement lists your primary task:
-        1. Filling forms with pixel-perfect accuracy using information from this knowledge base
-                        
-        ===== FORM FILLING INTELLIGENCE =====
-        
+    session_id="pdf_document_editing_session",
+    # description="You are an elite document intelligence system specializing in perfect form completion with unmatched accuracy.",
+    instructions=dedent("""\        
         When the user uploads an empty or partially filled form to complete:
         
         1. First, identify the form type (tax, medical, application, etc.) to understand the context and expected information.
@@ -486,6 +483,8 @@ document_search_agent = Agent(
     update_knowledge=True,
     show_tool_calls=True, 
     debug_mode=True, 
+    storage=storage, 
+    read_chat_history=True,
 )
 
 mistral_api_key = os.getenv('MISTRAL_API_KEY')
@@ -504,6 +503,8 @@ document_edit_agent = Agent(
     Make sure to return the output in JSON format
     """),
     tools=[],
+    storage=storage,
+    read_chat_history=True,
 )
 
 app = Playground(agents=[document_upload_agent, document_search_agent]).get_app()
