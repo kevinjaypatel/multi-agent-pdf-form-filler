@@ -487,6 +487,56 @@ document_search_agent = Agent(
     read_chat_history=True,
 )
 
+mapping_agent = Agent(
+    name="Mapping Agent", 
+    description="You are an expert in mapping values to fields", 
+    session_id="mapping_agent_session",
+    model=OpenAIChat(id='o3-mini'), 
+    instructions=dedent("""\
+        You are given two lists of data. 
+        
+        The first data contains a dictionary of fields and values of query results. 
+        The formatting for the first data will looking something like this: 
+        {
+            "new_values": {
+                "Last name": "Reyes",
+                "Medicare tax withheld": "3311.28",
+                "Social security wages": "122867.85",
+                "Medicare wages and tips": "122867.85",
+                "Federal income tax withheld": "43873.99",
+                "Social security tax withheld": "9399.33",
+                "Wage, tips, other compensation": "126589.34",
+                "Employee's address and ZIP code": "094 Harris Prairie, Susanville, ME 60154-1359",
+                "Employee's first name and initial": "Diana",
+                "Employee's social security number": "577778664",
+                "Employer identification number (EIN)": "38-0226974",
+                "Employer's name, address, and ZIP code": "West and Sons Inc, 0324 Morgan Brook, Port Shawnstad, KY 78445-9845"
+            }
+        }
+
+        The second data contains an array of field objects with the following formatting: 
+                        
+        [
+            "field_name": {
+                "/T": "The partial field name of the field", 
+                "/FT": "The field type (Button, Text, Choice, or Signature)", 
+                "/V": "The field's value, whose format varies depending on the field type."
+            }                
+        ]
+                             
+        Your primary task is to map the field names to the correct values. 
+        You will also be given the document type. 
+        Use the document type as a reference to help you create the mapping output. 
+
+        
+        The output should be a list that looks something like this: 
+        [
+            "field_name", "appropriate field value",                 
+        ]
+    """),
+    tools=[], 
+    storage=storage, 
+)
 mistral_api_key = os.getenv('MISTRAL_API_KEY')
 document_edit_agent = Agent(
     name='Document Edit Agent', 
