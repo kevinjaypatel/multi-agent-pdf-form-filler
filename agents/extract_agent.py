@@ -1,33 +1,31 @@
 from agno.agent import Agent, RunResponse 
 from agno.playground.playground import Playground
+from agno.utils.pprint import pprint_run_response
 from textwrap import dedent
-from agno.storage.agent.postgres import PostgresAgentStorage
+from agno.storage.postgres import PostgresStorage
 from datetime import datetime
 import json
 import os
 
+from tools.edit_form import get_form_fields, get_generic_form_data 
 # Models 
 from agno.models.openai import OpenAIChat
-from agno.models.mistral import MistralChat 
+# from agno.models.mistral import MistralChat 
+# from agno.models.anthropic import Claude 
 
 # Agent Tools 
-from agno.tools.dalle import DalleTools 
-from PIL import Image, ImageDraw, ImageFont 
 # from tools.edit_form import detect_missing_fields
 
 # Import the shared knowledge base and extracted_info_kb
-from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
-
-# Structured output 
-from output.output import UserProfileDocument
+# from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
 
 db_url = "postgresql+psycopg://agno:agno@db/agno"
 agent_model_id = "gpt-4o"
 
-storage = PostgresStorage(
-        table_name="extraction_agent_sessions",
-        db_url=db_url
-)
+# storage = PostgresStorage(
+#         table_name="extraction_agent_sessions",
+#         db_url=db_url
+# )
 
 def find_required_information(document_path: str=None) -> str: 
     """
@@ -140,428 +138,217 @@ def extract_and_store():
     
     return response, metadata
 
-def edit_form(image_path: str, new_values: dict, font_path: str = "arial.ttf", font_size: int = 18) -> str: 
-    image = Image.open(image_path)
-    draw = ImageDraw.Draw(image) 
-
-    font = ImageFont.truetype(font_path, font_size) 
-
-    for field, info in new_values.items(): 
-        position = tuple(info["position"])
-
-        # Erase old text (draw a white box over the field)
-        draw.rectangle([position, (position[0] + 200, position[1] + 40)], fill="white")
-
-        # Insert new text
-        draw.text(position, info["new_value"], font=font, fill="black")
-
-    # Save the edited image
-    updated_image_filename = "edited_form.jpg"
-    output_dir = "static"
-    os.makedirs(output_dir, exist_ok=True)
-    updated_image_path = os.path.join(output_dir, updated_image_filename)
-    image.save(updated_image_path) 
-    
-    # Return a markdown image link that can be displayed in the agent's response
-    image_url = f"/static/edited_form.jpg"
-    print(f"Edited tax form saved at {updated_image_path}")
-    return f"![Edited Form]({image_url})"
-
 # Create the extraction agent
-document_upload_agent = Agent(
-    name="Document Upload Agent",
-    session_id="pdf_document_editing_session",
-    description="You are an expert in analyzing and extracting user information from documents",
-    instructions=dedent("""\
-        Your primary function is the following:
-        1. Creating and maintaining a comprehensive knowledge base from user documents
+# document_upload_agent = Agent(
+#     name="Document Upload Agent",
+#     session_id="pdf_document_uploading_session",
+#     description="You are an expert in analyzing and extracting user information from documents",
+#     instructions=dedent("""\
+#         When the user uploads a document:
+#         1. Analyze each document through multiple specialized extraction passes:
+#         a. Initial pass: Extract basic metadata (document type, date, issuer)
+#         b. Structural pass: Identify document sections, tables, and hierarchies
+#         c. Detail pass: Extract all personal information with field context preservation
+#         d. Verification pass: Cross-check extracted data against expected patterns
         
-        ===== KNOWLEDGE BASE ARCHITECTURE =====
+#         2. For each piece of extracted information:
+#         a. Maintain the original formatting 
+#         b. Tag with temporal relevance (recency, expiration if applicable)
+#         c. Preserve relationships between related data points
         
-        When the user uploads documents to create or update their profile:
-        1. Analyze each document through multiple specialized extraction passes:
-        a. Initial pass: Extract basic metadata (document type, date, issuer)
-        b. Structural pass: Identify document sections, tables, and hierarchies
-        c. Detail pass: Extract all personal information with field context preservation
-        d. Verification pass: Cross-check extracted data against expected patterns
+#         3. When merging data across multiple documents:
+#         a. Maintain an audit trail of all information sources and conflicts
+#         b. Use contextual clues to determine the authoritative version
+#         c. Preserve alternative values with confidence rankings
+#         d. Apply domain-specific merging rules for specialized information
         
-        2. For each piece of extracted information:
-        a. Store the exact source location (page, region, context)
-        b. Maintain the original formatting and any special notation
-        c. Assign confidence scores (1-5) based on extraction clarity
-        d. Tag with temporal relevance (recency, expiration if applicable)
-        e. Preserve relationships between related data points
-        f. Record any validation rules or constraints associated with the data
-        
-        3. Implement a sophisticated knowledge graph structure:
-        a. Create entity nodes for the user and related parties
-        b. Establish relationship edges between entities
-        c. Tag information with attribute types and validation rules
-        d. Index all content for rapid retrieval during form filling
-        e. Maintain versioning for information that changes over time
-        
-        4. When merging data across multiple documents:
-        a. Apply intelligent conflict resolution using temporal precedence
-        b. Maintain an audit trail of all information sources and conflicts
-        c. Use contextual clues to determine the authoritative version
-        d. Preserve alternative values with confidence rankings
-        e. Apply domain-specific merging rules for specialized information
-        
-        5. Store the knowledge base with the following schema:
-            {
-                "entities": {
-                    "primary_user": {
-                        "personal": {/* personal information */},
-                        "contact": {/* contact details */},
-                        "financial": {/* financial information */},
-                        "professional": {/* work information */},
-                        "medical": {/* health information */},
-                        "relationships": {/* family/dependents */},
-                        "identification": {/* ID numbers, licenses, etc. */}
-                    },
-                    "related_entities": [
-                        {/* spouse, dependents, beneficiaries */}
-                    ]
-                },
-                "documents": [
-                    {
-                        "type": "document_type",
-                        "date": "issue_date",
-                        "issuer": "document_issuer",
-                        "extracted_fields": {/* all extracted fields */},
-                        "confidence_metrics": {/* confidence scores */},
-                        "processing_metadata": {/* extraction record */}
-                    }
-                ],
-                "audit_trail": [
-                    {/* record of all updates and conflicts */}
-                ],
-                "system_metadata": {
-                    "last_updated": "timestamp",
-                    "completeness_score": "0-100",
-                    "information_gaps": [/* missing critical information */]
-                }
-            }
-    """),
-    model=OpenAIChat(id=agent_model_id),
-    knowledge=extract_agent_knowledge_base,             # Provides the agent with a knowledge base to search and update               
-    # search_knowledge=True,                # Adds a tool allowing the agent to search the knowledge base 
-    update_knowledge=True,                # Adds a tool allowing the agent to update the knowledge base
-    read_chat_history=True,
-    # tools=[edit_form],
-    # add_context_instructions=True, 
-    # add_references=True,
-    show_tool_calls=True, 
-    markdown=True,
-    debug_mode=True,
-    storage=storage
-)
+#         4. IMPORTANT: After extracting information, ALWAYS use the `add_to_knowledge` tool to store the extracted data.
+#            You MUST call this tool explicitly with the extracted information.
+           
+#         5. The `add_to_knowledge` tool requires a JSON object with the following schema:
+#             {
+#                 "entities": {
+#                     "primary_user": {
+#                         "personal": {/* personal information */},
+#                         "contact": {/* contact details */},
+#                         "financial": {/* financial information */},
+#                         "professional": {/* work information */},
+#                         "medical": {/* health information */},
+#                         "relationships": {/* family/dependents */},
+#                         "identification": {/* ID numbers, licenses, etc. */}
+#                     },
+#                     "related_entities": [
+#                         {/* spouse, dependents, beneficiaries */}
+#                     ]
+#                 },
+#                 "documents": [
+#                     {
+#                         "type": "document_type",
+#                         "date": "issue_date",
+#                         "issuer": "document_issuer",
+#                         "extracted_fields": {/* all extracted fields */},
+#                         "confidence_metrics": {/* confidence scores */},
+#                         "processing_metadata": {/* extraction record */}
+#                     }
+#                 ],
+#                 "audit_trail": [
+#                     {/* record of all updates and conflicts */}
+#                 ],
+#                 "system_metadata": {
+#                     "last_updated": "timestamp",
+#                     "completeness_score": "0-100",
+#                     "information_gaps": [/* missing critical information */]
+#                 }
+#             }
+#     """),
+#     model=OpenAIChat(id='gpt-4o'),
+#     knowledge=extract_agent_knowledge_base,             # Provides the agent with a knowledge base to search and update               
+#     update_knowledge=True,                              # Adds a tool allowing the agent to update the knowledge base
+#     read_chat_history=True,
+#     show_tool_calls=True, 
+#     markdown=True,
+#     debug_mode=True,
+#     storage=storage
+# )
 
-document_search_agent = Agent(
-    name="Document Search Agent",
-    session_id="pdf_document_editing_session",
-    # description="You are an elite document intelligence system specializing in perfect form completion with unmatched accuracy.",
-    instructions=dedent("""\        
-        When the user uploads an empty or partially filled form to complete:
-        
-        1. First, identify the form type (tax, medical, application, etc.) to understand the context and expected information.
-        a. Recognize form type from visual and textual cues
-        b. Identify form version or year if applicable
-        c. Flag any special requirements or instructions on the form
-        
-        2. Scan for visual reference points that won't change between forms (logos, headers, section titles, form IDs).
-        a. Use these as anchor points for more stable field positioning
-        b. Calculate field positions relative to these anchor points when possible
-        c. Create a form reference grid for spatial orientation
-        d. Identify stable landmarks for navigation within complex forms
-        
-        3. For each empty field that needs to be filled:
-        a. PRIMARY METHOD: Identify the field by its label text or contextual information (text near the field)
-        b. SECONDARY METHOD: Use visual cues like lines, boxes, or input areas
-        c. TERTIARY METHOD: Detect the baseline position for text placement instead of using the center of the bounding box 
-        d. Determine the field type (text, number, date, checkbox, signature, etc.)
-        e. Note which section or subsection the field belongs to
-        f. If using coordinates, capture multiple points for irregular shapes when possible
-        g. Assign a confidence score (1-5) for how certain you are about this field identification
-        h. Consider field visibility factors (e.g., fields may be conditionally visible)
-        i. Identify any field dependencies (fields that become relevant based on other selections)
-        
-        4. Organize fields hierarchically based on form sections and relationships between fields.
-        a. Identify parent-child relationships between fields
-        b. Group related fields (address lines, name components, etc.)
-        c. Record the logical sequence of fields within each section
-        d. Map conditional relationships (if field X = Y, then field Z is required)
-        e. Identify mutually exclusive field groups
-        
-        5. Perform multi-pass verification:
-        a. First pass: Identify all fields individually
-        b. Second pass: Verify that field identifications make logical sense together
-        c. Third pass: Check for any missed fields or inconsistencies
-        d. Fourth pass: Validate expected fields based on form type are present
-        e. Fifth pass: Verify completeness against form requirements
-        
-        6. For each identified field, FIRST search your EXISTING knowledge base to find the relevant information. Do not ask the user to upload additional documents unless absolutely necessary.
-        a. The knowledge base already contains information extracted from previously uploaded documents
-        b. Match information types to field types (phone numbers in phone fields, etc.)
-        c. Consider the overall form context when selecting information
-        d. Use pattern matching for formatted fields (SSN, phone, dates)
-        e. Only flag information as missing if it cannot be found anywhere in your knowledge base
-        f. Apply form-specific formatting rules to raw data
-        g. Consider recency of information when multiple values exist
-        
-        7. If and ONLY if you cannot find information for critical fields after thoroughly searching your knowledge base, ask the user for the missing information. Do not ask for additional documents unless you have confirmed the information is not in your knowledge base.
-        a. Clearly identify which fields are missing information
-        b. Suggest potential document types that might contain the information
-        c. Provide context about why the information is needed
-        d. Offer to update the knowledge base with user-provided information
-        
-        8. When working with form fields, use all your sophisticated identification techniques internally, but when preparing data for the edit_form tool, use this specific format:
-        
-            new_values = {
-                "Field Name 1": {"position": [x, y], "new_value": "Value 1"},
-                "Field Name 2": {"position": [x, y], "new_value": "Value 2"},
-                ...
-            }
-        
-        This is the EXACT format required by the edit_form tool. Do not modify this structure or add additional fields.
-        
-        9. Before finalizing, validate that:
-        a. Each piece of information matches the expected format for that field type
-        b. Related fields have consistent information (e.g., zip code matches city/state)
-        c. Mandatory fields are all completed
-        d. Highest confidence matches are prioritized
-        e. Values follow any pattern requirements for specialized fields
-        f. The form makes logical sense as a whole
-        g. Conditional logic is properly applied (if field X is Y, field Z contains appropriate value)
-        h. Calculations between related fields are correct (where applicable)
-        
-        10. Apply domain-specific knowledge:
-            a. For tax forms: Ensure calculations between related fields are correct
-            b. For medical forms: Verify medical information is consistent
-            c. For applications: Ensure all required sections are complete
-            d. For legal forms: Ensure consistency in names and identifying information across all sections
-            e. For financial forms: Verify numerical values follow expected patterns and relationships
-            f. For government forms: Ensure compliance with specific formatting requirements
-        
-        11. When using the `edit_form` tool:
-            a. The tool requires EXACTLY two parameters:
-            - "image_data": The base64 encoded image data of the form that needs to be filled
-            - "new_values": A JSON object containing the field positions and values
-            b. The "new_values" parameter MUST follow this exact format:
-            {
-                "Field Name 1": {"position": [x, y], "new_value": "Value 1"},
-                "Field Name 2": {"position": [x, y], "new_value": "Value 2"},
-                ...
-            }
-            c. Do NOT include any other parameters or metadata in the edit_form call
-            d. Start with highest confidence fields first
-            e. Even though you use sophisticated identification methods internally, the final output to edit_form must use simple position coordinates
-            f. You must convert the image to base64 before passing it to edit_form
-            g. Here is an example of a correct edit_form call:
-            edit_form(
-                image_data="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEA...",
-                new_values={
-                "Full Name": {"position": [150, 200], "new_value": "Jane Doe"},
-                "Total Income": {"position": [300, 500], "new_value": "$75,000"}
-                }
-            )
-        
-        12. After form completion:
-            a. Report any low-confidence entries that might need human verification
-            b. Note any unusual patterns or potential inconsistencies
-            c. Suggest improvements for future form processing
-            d. Provide a summary of fields filled and their confidence levels
-            e. Identify any remaining information gaps in the knowledge base
-            f. Suggest specific document types to address those gaps
-        
-        ===== EXECUTION STRATEGY =====
-        
-        1. Implement a staged filling approach:
-        a. Stage 1: Fill high-confidence (90%+) fields
-        b. Stage 2: Fill medium-confidence (70-89%) fields
-        c. Stage 3: Fill lower-confidence fields with verification
-        d. Stage 4: Review and validate all field relationships
-        
-        2. Apply adaptive positioning:
-        a. Use primary method first (label-based)
-        b. Fall back to visual recognition if needed
-        c. Adjust coordinates based on form scaling
-        d. Calculate field centers for greater accuracy
-        e. Adjust for any form rotation or skew
-        f. Handle multi-page forms with proper page context
-        
-        3. Employ placement verification:
-        a. Verify field context before insertion
-        b. Confirm insertion success after each field
-        c. Adjust approach based on feedback
-        d. Develop field-specific insertion strategies
-        e. Handle special cases like signature fields appropriately
-        
-        4. Manage form-specific challenges:
-        a. Develop strategies for handling multi-page forms
-        b. Address form sections that expand or contract
-        c. Handle conditional visibility of fields
-        d. Manage tabular data entry appropriately
-        e. Address special insertion cases (e.g., signatures, initials, checkboxes)
-        
-        ===== SYSTEM COORDINATION =====
-        
-        1. Maintain perfect synchronization between knowledge base and form filling:
-        a. Update knowledge base with any new information provided during form filling
-        b. Tag form-sourced information with appropriate confidence levels
-        c. Create bi-directional references between forms and knowledge entities
-        d. Maintain information provenance across the system
-        
-        2. Implement a proactive assistance protocol:
-        a. Anticipate user needs based on document history and form requests
-        b. Suggest optimal document uploads to complete profiles
-        c. Pre-emptively identify potential information gaps
-        d. Provide guidance on information quality and completeness
-        
-        3. Continuous improvement system:
-        a. Track success and failure patterns in form filling
-        b. Identify recurring field types that cause challenges
-        c. Suggest specific improvements to document processing
-        d. Learn from user corrections and adjustments
-        e. Adapt to evolving form types and requirements
-        
-        ===== CRITICAL PRIORITIES =====
-        
-        1. Field identification accuracy is your highest priority
-        a. Always prefer contextual identification methods over coordinates
-        b. Use multiple identification methods as fallbacks
-        c. Never rely solely on coordinates unless absolutely necessary
-        d. Develop specific strategies for challenging field types
-        
-        2. Knowledge integrity is essential
-        a. Never fabricate information
-        b. Maintain clear provenance for all data
-        c. Flag inconsistencies and gaps proactively
-        d. Preserve original formatting and context where relevant
-        
-        3. Form completion precision
-        a. Validate all insertions for correctness
-        b. Ensure formatting matches field requirements
-        c. Verify logical consistency across related fields
-        d. Respect field-specific constraints and limitations
-        
-        4. User assistance focus
-        a. Clearly communicate confidence levels
-        b. Proactively identify information gaps
-        c. Suggest specific document types to fill knowledge gaps
-        d. Provide actionable guidance for improving data quality
-        
-        5. Adaptation and learning
-        a. Record successful and unsuccessful strategies
-        b. Adapt to form variations and challenges
-        c. Improve accuracy through pattern recognition
-        d. Build form-specific intelligence over time
-        
-        ===== IMPORTANT OPERATIONAL NOTES =====
-        
-        1. Do not include disclaimers about being unable to process images. You are capable of analyzing document images and should proceed directly with extraction and processing without stating limitations.
-        
-        2. Always assume that previously uploaded documents have already populated your knowledge base. When filling forms, use this existing knowledge first rather than asking for new documents.
-        
-        3. Maintain continuity between document analysis and form filling - they are connected processes sharing the same knowledge base.
-        
-        4. If the user asks you to fill a form, ALWAYS check your knowledge base first before requesting additional information or documents.
-        
-        5. Clearly communicate that you are checking the knowledge base when filling forms, so the user understands the connection between their previously uploaded documents and the current form-filling task.
-        
-        6. The MOST CRITICAL requirement is to use the exact format for the edit_form tool:
-        - Only provide image_data and new_values parameters
-        - Format new_values as a simple object with field names as keys
-        - Each field must have only position (coordinates) and new_value
-        - Do not include any additional parameters, metadata, or nested structures
-        
-    """),
-    tools=[edit_form],
-    model=OpenAIChat(id=agent_model_id), 
-    knowledge=extract_agent_knowledge_base,
-    search_knowledge=True,  
-    update_knowledge=True,
-    show_tool_calls=True, 
-    debug_mode=True, 
-    storage=storage, 
-    read_chat_history=True,
-)
+# document_search_agent = Agent(
+#     name="Document Search Agent",
+#     session_id="pdf_document_searching_session",
+#     description="You are an expert in analyzing documents and finding missing information from them",
+#     instructions=dedent("""\    
+#         1. Extract and parse all missing information from the document 
+#         2. Use the `search_knowledge` tool to find the missing information. 
+#         Make sure to use the correct parameters when calling this tool.                 
+
+#         3. Important: Fields can be organised hierarchically, where one field can be placed under another.  
+                        
+#         4. If you are analyzing a W2-form, make sure to structure the output in alphanumeric order based on the partial field name. 
+#         Remember that some fields are grouped together. 
+                        
+#         For example, Box 15 in a W2-form is grouped with other fields. 
+
+#         5. Structure the output in a dictionary format like this: 
+#         {
+#             "field_name_box_a": "new value", 
+#             "field_name_box_f": "new value", 
+#             "field_name_box_1": "new value",
+#             "field_name_box_15": "new value", 
+#             "field_name_box_20": "new value", 
+#         }                        
+#     """),
+#     tools=[],
+#     model=OpenAIChat(id='gpt-4o'), 
+#     knowledge=extract_agent_knowledge_base,
+#     search_knowledge=True,  
+#     update_knowledge=True,
+#     show_tool_calls=True, 
+#     debug_mode=True, 
+#     storage=storage, 
+#     read_chat_history=True,
+# )
 
 mapping_agent = Agent(
     name="Mapping Agent", 
-    description="You are an expert in mapping values to fields", 
+    description="You are an expert in mapping field names to form values", 
     session_id="mapping_agent_session",
-    model=OpenAIChat(id='o3-mini'), 
+    model=OpenAIChat(id='gpt-4o'), 
     instructions=dedent("""\
-        You are given two lists of data. 
+        You will receive the following inputs:
+        - "field_objects": An array of field objects parsed from an empty or partially filled form document 
+        - "form_values": Contextually relevent field names and values that need to be mapped to the field objects
+        - "document_type": Indicates what type of document form is being processed (e.g., "W2 form, 1040 form, etc")
         
-        The first data contains a dictionary of fields and values of query results. 
-        The formatting for the first data will looking something like this: 
-        {
-            "new_values": {
-                "Last name": "Reyes",
-                "Medicare tax withheld": "3311.28",
-                "Social security wages": "122867.85",
-                "Medicare wages and tips": "122867.85",
-                "Federal income tax withheld": "43873.99",
-                "Social security tax withheld": "9399.33",
-                "Wage, tips, other compensation": "126589.34",
-                "Employee's address and ZIP code": "094 Harris Prairie, Susanville, ME 60154-1359",
-                "Employee's first name and initial": "Diana",
-                "Employee's social security number": "577778664",
-                "Employer identification number (EIN)": "38-0226974",
-                "Employer's name, address, and ZIP code": "West and Sons Inc, 0324 Morgan Brook, Port Shawnstad, KY 78445-9845"
-            }
-        }
-
-        The second data contains an array of field objects with the following formatting: 
+        1. Your task is to create a JSON object that correctly maps the field names from the field objects array to the values from the form_values object  
                         
-        [
-            "field_name": {
-                "/T": "The partial field name of the field", 
+        2. IMPORTANT: The field names in the JSON object should be the EXACT key items from the field_objects array, not simplified or renamed versions.
+        
+        3. The final JSON object should contain as many key value pairs as there are values in the form_values object. In other words, 
+        the size or number of key value pairs in the JSON object should be equal to the number of values provided in the form_values object 
+                                       
+        4. Compare both the form objects and form values, and determine which value from the form values list 
+        should be mapped to the field name from the field objects, and vice versa.   
+                        
+        5. The core strucure of a field object can look like this: 
+                        
+        {
+            "mapping_name": {
+                "/T": "The partial name of the field", 
                 "/FT": "The field type (Button, Text, Choice, or Signature)", 
                 "/V": "The field's value, whose format varies depending on the field type."
             }                
-        ]
-                             
-        Your primary task is to map the field names to the correct values. 
-        You will also be given the document type. 
-        Use the document type as a reference to help you create the mapping output. 
+        }
 
-        
-        The output should be a list that looks something like this: 
-        [
-            "field_name", "appropriate field value",                 
-        ]
+        6. IMPORTANT: You have to predict the field value for the mapping name. Do not hallucinate or make up values.   
+          
     """),
     tools=[], 
-    storage=storage, 
+    # storage=storage,
+    debug_mode=True,  # Add this to see detailed logs
 )
-mistral_api_key = os.getenv('MISTRAL_API_KEY')
-document_edit_agent = Agent(
-    name='Document Edit Agent', 
-    description='You specialize in editing documents', 
-    model=MistralChat(id='pixtral-12b-2409', api_key=mistral_api_key),
-    instructions=dedent("""\
-    "Analyze image documents and detect all form fields where information is missing. For each missing field, return:
+# # mistral_api_key = os.getenv('MISTRAL_API_KEY')
+# document_edit_agent = Agent(
+#     name='Document Edit Agent', 
+#     description='You specialize in editing documents', 
+#     model=MistralChat(id='pixtral-12b-2409', api_key=mistral_api_key),
+#     instructions=dedent("""\
+#     "Analyze image documents and detect all form fields where information is missing. For each missing field, return:
 
-    The field label (if visible).
-    The bounding box coordinates (x, y, width, height).
-    Where x, y is the upper left corner of the bounding box coordinate 
-    Any additional context about the field. 
+#     The field label (if visible).
+#     The bounding box coordinates (x, y, width, height).
+#     Where x, y is the upper left corner of the bounding box coordinate 
+#     Any additional context about the field. 
                         
-    Make sure to return the output in JSON format
-    """),
-    tools=[],
-    storage=storage,
-    read_chat_history=True,
-)
+#     Make sure to return the output in JSON format
+#     """),
+#     tools=[],
+#     storage=storage,
+#     read_chat_history=True,
+# )
 
-app = Playground(agents=[document_upload_agent, document_search_agent]).get_app()
+# app = Playground(agents=[document_upload_agent, document_search_agent]).get_app()
 
 if __name__ == "__main__":
-    document_upload_agent.print_response(
-        "Extract all user information from the documents in the knowledge base. Include names, addresses, phone numbers, email addresses, and any other relevant personal information. Organize the information by individual and add timestamps for each piece of information.", 
-        stream=True
-    )
+    # document_upload_agent.print_response(
+    #     "Extract all user information from the documents in the knowledge base. Include names, addresses, phone numbers, email addresses, and any other relevant personal information. Organize the information by individual and add timestamps for each piece of information.", 
+    #     stream=True
+    # )
     # serve_playground_app("upload_files:app", reload=True, host="0.0.0.0", port=8000)
+    
+    query_results = {
+        "employer_identification_number_box_b": "38-0226974",
+        "employer_name_address_box_c": "West and Sons Inc, 0324 Morgan Brook, Port Shawnstad, KY 78445-9845",
+        "employee_first_name_last_name_box_e": "Diana Reyes",
+        "employee_address_box_f": "094 Harris Prairie, Susanville, ME 60154-1359",
+        "employer_state_id_number_box_15": {
+            "State_1": {
+                "State": "HI",
+                "State ID Number": "457-24-914"
+            },
+            "State_2": {
+                "State": "WI",
+                "State ID Number": "386-31-922"
+            }
+        }
+    }
+
+    # field_objects = get_form_fields()
+    generic_form_data = get_generic_form_data()
+    print(generic_form_data)
+
+    # Run agent and return the response as a variable
+    # response: RunResponse = mapping_agent.run(
+    #     f"""
+    #     I need to map form values to form fields.
+        
+    #     Field objects: {json.dumps(field_objects)}
+    #     Document metadata: 
+    #     - Document type: W2 form 2025
+
+    #     Form values: {json.dumps(query_results)}
+        
+    #     Please provide the mapping between these values and fields.
+    #     """
+    # )
+    
+    # Print the response in markdown format
+    # pprint_run_response(response, markdown=True)
