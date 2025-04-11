@@ -5,19 +5,17 @@ from textwrap import dedent
 from agno.storage.postgres import PostgresStorage
 from datetime import datetime
 import json
-import os
-
-from tools.edit_form import get_form_fields, get_generic_form_data 
+import re
 
 # Models 
 from agno.models.openai import OpenAIChat
-
 
 # Knowledge Base 
 from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
 
 # Tools 
 from tools.edit_form import edit_form 
+
 
 db_url = "postgresql+psycopg://agno:agno@db/agno"
 agent_model_id = "gpt-4o"
@@ -249,19 +247,19 @@ document_search_agent = Agent(
 )
 
 mapping_agent = Agent(
-    name="Mapping Agent", 
+    name="Document Mapping Agent", 
     description="You are an expert in mapping field names to form values", 
     session_id="mapping_agent_session",
     model=OpenAIChat(id='gpt-4o'), 
     instructions=dedent("""\
         You will receive the following inputs:
         - "field_objects": An array of field objects parsed from an empty or partially filled form document 
-        - "form_values": Contextually relevent field names and values that need to be mapped to the field objects
+        - "form_values": field names and values that need to be mapped to the field objects
         - "document_type": Indicates what type of document form is being processed (e.g., "W2 form, 1040 form, etc")
         
         1. Your task is to create a JSON object that correctly maps the field names from the field objects array to the values from the form_values object  
                         
-        2. IMPORTANT: The field names in the JSON object should be the EXACT key items from the field_objects array, not simplified or renamed versions.
+        2. IMPORTANT: The field names in the JSON object that you create should be the EXACT key items from the field_objects array, not simplified or renamed versions.
         
         3. The final JSON object should contain as many key value pairs as there are values in the form_values object. In other words, 
         the size or number of key value pairs in the JSON object should be equal to the number of values provided in the form_values object 
@@ -279,7 +277,173 @@ mapping_agent = Agent(
             }                
         }
 
-        6. IMPORTANT: You have to predict the field value for the mapping name. Do not hallucinate or make up values.   
+        6. IMPORTANT: Here is an example of the mapping output for a filled 2025 W2 Form. Pay attention the the field names, and example values that are assigned to them. 
+        Only use this as reference for when you are filling out W2 forms. Do not use these same values to create the JSON mapping output.   
+        {
+            Field: topmostSubform[0].Copy1[0].BoxA_ReadOrder[0].f2_01[0]
+            Value: "Box A: Employee's Social Security Number"
+            Example Value: "111-11-1111"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].f2_02[0]
+            Value: "Box B: Employer's Identification Number"
+            Example Value: "38-0226974"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].f2_03[0]
+            Value: "Box C: Employer's Name, address, and ZIP code"
+            Example Value: "West and Sons Inc 0324 Morgan Brook Port Shanstad KY 78445-9845"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].f2_04[0]
+            Value: "Box D: Control Number"
+            Example Value: "5777864"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].FirstName_ReadOrder[0].f2_05[0]
+            Value: "Box E: Employee's first name and initial" 
+            Example Value: "Diana"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].LastName_ReadOrder[0].f2_06[0]
+            Value: "Employee's last name" 
+            Example Value: "Reyes"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].f2_07[0]
+            Value: "Suffix"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Left[0].f2_08[0]
+            Value: "Box F: Employee's address and ZIP code"
+            Example Value: "094 Harris Prairie, Susanville, ME 60154-1359"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box1_ReadOrder[0].f2_09[0]
+            Value: "Box 1: Wages, tips, other compensation"
+            Example Value: "126589.34"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].f2_10[0]
+            Value: "Box 2: Federal income tax withheld"
+            Example Value: "43873.99"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box3_ReadOrder[0].f2_11[0]
+            Value: "Box 3: Social security wages"
+            Example Value: "122867.85"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].f2_12[0]
+            Value: "Box 4: Social security tax withheld" 
+            Example Value: "9399.39"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box5_ReadOrder[0].f2_13[0]
+            Value: "Box 5: Medicare wages and tips"
+            Example Value: "114182.15"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].f2_14[0]
+            Value: "Box 6: Medicare tax withheld"
+            Example Value: "3311.28"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box7_ReadOrder[0].f2_15[0]
+            Value: "Box 7: Social security tips"
+            Example Value: "122867.85"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].f2_16[0]
+            Value: "Box 8: Allocated tips" 
+            Example Value: "114182.15"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box9_ReadOrder[0].f2_17[0]
+            Value: "Box 9"
+            Example Value: ""
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].f2_18[0]
+            Value: "Box 10: Dependent care benefits" 
+            Example Value: "219"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box11__ReadOrder[0].f2_19[0]
+            Value: "Box 11: Nonqualified plans"
+            Example Value: "158"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_20[0]
+            Value: "Box 12a: value one"
+            Example Value: "E"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_21[0]
+            Value: "Box 12a: value two"
+            Example Value: "9090"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_22[0]
+            Value: "Box 12b: value one"
+            Example Value: ""
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_23[0]
+            Value: "Box 12b: value two"
+            Example Value: "459"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_24[0]
+            Value: "Box 12c: value one"
+            Example Value: "D"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_25[0]
+            Value: "Box 12c: value two"
+            Example Value: "275"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_26[0]
+            Value: "Box 12d: value one"
+            Example Value: "E"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Box12_ReadOrder[0].f2_27[0]
+            Value: "Box 12d: value two"
+            Example Value: "688"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Statutory_ReadOrder[0].c2_2[0]
+            Value: "Checked Box"
+            Example Value: "/1"
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].Retirement_ReadOrder[0].c2_3[0]
+            Value: /Off
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].c2_4[0]
+            Value: /1
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Col_Right[0].f2_28[0]
+            Value: 
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Boxes15_ReadOrder[0].Box15_ReadOrder[0].f2_29[0]
+            Value: HI 
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Boxes15_ReadOrder[0].f2_30[0]
+            Value: 4 5 7 - 2 4 - 9 1 4
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Boxes15_ReadOrder[0].f2_31[0]
+            Value: WI 
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Boxes15_ReadOrder[0].f2_32[0]
+            Value: 3 8 6 - 3 1 - 9 2 2
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box16_ReadOrder[0].f2_33[0]
+            Value: 68442.97
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box16_ReadOrder[0].f2_34[0]
+            Value: 66147.7
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box17_ReadOrder[0].f2_35[0]
+            Value: 4761.03
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box17_ReadOrder[0].f2_36[0]
+            Value: 6996.33
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box18_ReadOrder[0].f2_37[0]
+            Value: 101209.95
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box18_ReadOrder[0].f2_38[0]
+            Value: 125139.92
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box19_ReadOrder[0].f2_39[0]
+            Value: 14120.87
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].Box19_ReadOrder[0].f2_40[0]
+            Value: 23035.86
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].f2_41[0]
+            Value: Cynthia
+            --------------------------------------------------
+            Field: topmostSubform[0].Copy1[0].f2_42[0]
+            Value: William 
+        }
+
+        7. IMPORTANT: You have to determine the  mapping name for each field value for the. Do not hallucinate or make up values.   
           
     """),
     tools=[], 
@@ -289,41 +453,52 @@ mapping_agent = Agent(
 
 if __name__ == "__main__":
     
-    query_results = {
-        "employer_identification_number_box_b": "38-0226974",
-        "employer_name_address_box_c": "West and Sons Inc, 0324 Morgan Brook, Port Shawnstad, KY 78445-9845",
-        "employee_first_name_last_name_box_e": "Diana Reyes",
-        "employee_address_box_f": "094 Harris Prairie, Susanville, ME 60154-1359",
-        "employer_state_id_number_box_15": {
-            "State_1": {
-                "State": "HI",
-                "State ID Number": "457-24-914"
-            },
-            "State_2": {
-                "State": "WI",
-                "State ID Number": "386-31-922"
-            }
-        }
+    query_results = {    
+        "employee_social_security_number_box_a": "218-67-7264",
+        "employer_identification_number_box_b": "26-7978697",
+        "employer_name_address_zip_code_box_c": "Robinson, Clark and Mason PLC",
+        "employee_first_name_initial_box_e": "April Prince",
+        "employee_address_zip_code_box_f": "31126 Parsons Turnpike Apt. 170, East Shaun, IN 99674-9051"
     }
 
-    # field_objects = get_form_fields()
-    generic_form_data = get_generic_form_data()
-    print(generic_form_data)
-
+    field_objects = get_form_fields()
+    
     # Run agent and return the response as a variable
-    # response: RunResponse = mapping_agent.run(
-    #     f"""
-    #     I need to map form values to form fields.
+    response: RunResponse = mapping_agent.run(
+        f"""
+        I need to map form values to form fields.
         
-    #     Field objects: {json.dumps(field_objects)}
-    #     Document metadata: 
-    #     - Document type: W2 form 2025
+        Field objects: {json.dumps(field_objects)}
+        Document metadata: 
+        - Document type: W2 form 2025
 
-    #     Form values: {json.dumps(query_results)}
+        Form values: {json.dumps(query_results)}
         
-    #     Please provide the mapping between these values and fields.
-    #     """
-    # )
+        Please provide the mapping between these values and fields.
+        """
+    )
     
     # Print the response in markdown format
+    response_content = response.content 
+
+    # Extract just the JSON part using regex
+    json_match = re.search(r'```json\s*({[\s\S]*?})\s*```', response_content)
+    if json_match:
+        json_str = json_match.group(1)
+        response_dict = json.loads(json_str)
+        result = edit_form(response_dict)
+        print(result)
+    else:
+        print("No JSON found in response")
+
+    # Remove the markdown code block markers and any whitespace
+    # json_str = response_content.strip('```json').strip('```').strip()
+    # print(json_str)
+    # Parse the JSON string into a dictionary 
+    # response_dict = json.loads(json_str)
+
     # pprint_run_response(response, markdown=True)
+
+    # Write the data to the file 
+    # result = edit_form(response_dict)
+    # print(result)
