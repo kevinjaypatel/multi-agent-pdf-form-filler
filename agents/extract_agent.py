@@ -8,24 +8,24 @@ import json
 import os
 
 from tools.edit_form import get_form_fields, get_generic_form_data 
+
 # Models 
 from agno.models.openai import OpenAIChat
-# from agno.models.mistral import MistralChat 
-# from agno.models.anthropic import Claude 
 
-# Agent Tools 
-# from tools.edit_form import detect_missing_fields
 
-# Import the shared knowledge base and extracted_info_kb
-# from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
+# Knowledge Base 
+from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
+
+# Tools 
+from tools.edit_form import edit_form 
 
 db_url = "postgresql+psycopg://agno:agno@db/agno"
 agent_model_id = "gpt-4o"
 
-# storage = PostgresStorage(
-#         table_name="extraction_agent_sessions",
-#         db_url=db_url
-# )
+storage = PostgresStorage(
+        table_name="extraction_agent_sessions",
+        db_url=db_url
+)
 
 def find_required_information(document_path: str=None) -> str: 
     """
@@ -138,114 +138,115 @@ def extract_and_store():
     
     return response, metadata
 
-# Create the extraction agent
-# document_upload_agent = Agent(
-#     name="Document Upload Agent",
-#     session_id="pdf_document_uploading_session",
-#     description="You are an expert in analyzing and extracting user information from documents",
-#     instructions=dedent("""\
-#         When the user uploads a document:
-#         1. Analyze each document through multiple specialized extraction passes:
-#         a. Initial pass: Extract basic metadata (document type, date, issuer)
-#         b. Structural pass: Identify document sections, tables, and hierarchies
-#         c. Detail pass: Extract all personal information with field context preservation
-#         d. Verification pass: Cross-check extracted data against expected patterns
+# Document Upload Agent 
+document_upload_agent = Agent(
+    name="Document Upload Agent",
+    session_id="pdf_document_uploading_session",
+    description="You are an expert in analyzing and extracting user information from documents",
+    instructions=dedent("""\
+        When the user uploads a document:
+        1. Analyze each document through multiple specialized extraction passes:
+        a. Initial pass: Extract basic metadata (document type, date, issuer)
+        b. Structural pass: Identify document sections, tables, and hierarchies
+        c. Detail pass: Extract all personal information with field context preservation
+        d. Verification pass: Cross-check extracted data against expected patterns
         
-#         2. For each piece of extracted information:
-#         a. Maintain the original formatting 
-#         b. Tag with temporal relevance (recency, expiration if applicable)
-#         c. Preserve relationships between related data points
+        2. For each piece of extracted information:
+        a. Maintain the original formatting 
+        b. Tag with temporal relevance (recency, expiration if applicable)
+        c. Preserve relationships between related data points
         
-#         3. When merging data across multiple documents:
-#         a. Maintain an audit trail of all information sources and conflicts
-#         b. Use contextual clues to determine the authoritative version
-#         c. Preserve alternative values with confidence rankings
-#         d. Apply domain-specific merging rules for specialized information
+        3. When merging data across multiple documents:
+        a. Maintain an audit trail of all information sources and conflicts
+        b. Use contextual clues to determine the authoritative version
+        c. Preserve alternative values with confidence rankings
+        d. Apply domain-specific merging rules for specialized information
         
-#         4. IMPORTANT: After extracting information, ALWAYS use the `add_to_knowledge` tool to store the extracted data.
-#            You MUST call this tool explicitly with the extracted information.
+        4. IMPORTANT: After extracting information, ALWAYS use the `add_to_knowledge` tool to store the extracted data.
+           You MUST call this tool explicitly with the extracted information.
            
-#         5. The `add_to_knowledge` tool requires a JSON object with the following schema:
-#             {
-#                 "entities": {
-#                     "primary_user": {
-#                         "personal": {/* personal information */},
-#                         "contact": {/* contact details */},
-#                         "financial": {/* financial information */},
-#                         "professional": {/* work information */},
-#                         "medical": {/* health information */},
-#                         "relationships": {/* family/dependents */},
-#                         "identification": {/* ID numbers, licenses, etc. */}
-#                     },
-#                     "related_entities": [
-#                         {/* spouse, dependents, beneficiaries */}
-#                     ]
-#                 },
-#                 "documents": [
-#                     {
-#                         "type": "document_type",
-#                         "date": "issue_date",
-#                         "issuer": "document_issuer",
-#                         "extracted_fields": {/* all extracted fields */},
-#                         "confidence_metrics": {/* confidence scores */},
-#                         "processing_metadata": {/* extraction record */}
-#                     }
-#                 ],
-#                 "audit_trail": [
-#                     {/* record of all updates and conflicts */}
-#                 ],
-#                 "system_metadata": {
-#                     "last_updated": "timestamp",
-#                     "completeness_score": "0-100",
-#                     "information_gaps": [/* missing critical information */]
-#                 }
-#             }
-#     """),
-#     model=OpenAIChat(id='gpt-4o'),
-#     knowledge=extract_agent_knowledge_base,             # Provides the agent with a knowledge base to search and update               
-#     update_knowledge=True,                              # Adds a tool allowing the agent to update the knowledge base
-#     read_chat_history=True,
-#     show_tool_calls=True, 
-#     markdown=True,
-#     debug_mode=True,
-#     storage=storage
-# )
+        5. The `add_to_knowledge` tool requires a JSON object with the following schema:
+            {
+                "entities": {
+                    "primary_user": {
+                        "personal": {/* personal information */},
+                        "contact": {/* contact details */},
+                        "financial": {/* financial information */},
+                        "professional": {/* work information */},
+                        "medical": {/* health information */},
+                        "relationships": {/* family/dependents */},
+                        "identification": {/* ID numbers, licenses, etc. */}
+                    },
+                    "related_entities": [
+                        {/* spouse, dependents, beneficiaries */}
+                    ]
+                },
+                "documents": [
+                    {
+                        "type": "document_type",
+                        "date": "issue_date",
+                        "issuer": "document_issuer",
+                        "extracted_fields": {/* all extracted fields */},
+                        "confidence_metrics": {/* confidence scores */},
+                        "processing_metadata": {/* extraction record */}
+                    }
+                ],
+                "audit_trail": [
+                    {/* record of all updates and conflicts */}
+                ],
+                "system_metadata": {
+                    "last_updated": "timestamp",
+                    "completeness_score": "0-100",
+                    "information_gaps": [/* missing critical information */]
+                }
+            }
+    """),
+    model=OpenAIChat(id='gpt-4o'),
+    knowledge=extract_agent_knowledge_base,             # Provides the agent with a knowledge base to search and update               
+    update_knowledge=True,                              # Adds a tool allowing the agent to update the knowledge base
+    read_chat_history=True,
+    show_tool_calls=True, 
+    markdown=True,
+    debug_mode=True,
+    storage=storage
+)
 
-# document_search_agent = Agent(
-#     name="Document Search Agent",
-#     session_id="pdf_document_searching_session",
-#     description="You are an expert in analyzing documents and finding missing information from them",
-#     instructions=dedent("""\    
-#         1. Extract and parse all missing information from the document 
-#         2. Use the `search_knowledge` tool to find the missing information. 
-#         Make sure to use the correct parameters when calling this tool.                 
+# Document Search Agent 
+document_search_agent = Agent(
+    name="Document Search Agent",
+    session_id="pdf_document_searching_session",
+    description="You are an expert in analyzing documents and finding missing information from them",
+    instructions=dedent("""\    
+        1. Extract and parse all missing information from the document 
+        2. Use the `search_knowledge` tool to find the missing information. 
+        Make sure to use the correct parameters when calling this tool.                 
 
-#         3. Important: Fields can be organised hierarchically, where one field can be placed under another.  
+        3. Important: Fields can be organised hierarchically, where one field can be placed under another.  
                         
-#         4. If you are analyzing a W2-form, make sure to structure the output in alphanumeric order based on the partial field name. 
-#         Remember that some fields are grouped together. 
+        4. If you are analyzing a W2-form, make sure to structure the output in alphanumeric order based on the partial field name. 
+        Remember that some fields are grouped together. 
                         
-#         For example, Box 15 in a W2-form is grouped with other fields. 
+        For example, Box 15 in a W2-form is grouped with other fields. 
 
-#         5. Structure the output in a dictionary format like this: 
-#         {
-#             "field_name_box_a": "new value", 
-#             "field_name_box_f": "new value", 
-#             "field_name_box_1": "new value",
-#             "field_name_box_15": "new value", 
-#             "field_name_box_20": "new value", 
-#         }                        
-#     """),
-#     tools=[],
-#     model=OpenAIChat(id='gpt-4o'), 
-#     knowledge=extract_agent_knowledge_base,
-#     search_knowledge=True,  
-#     update_knowledge=True,
-#     show_tool_calls=True, 
-#     debug_mode=True, 
-#     storage=storage, 
-#     read_chat_history=True,
-# )
+        5. When calling the edit_form tool, provide a structured JSON object with the following format:
+        {
+            "field_name_box_a": "new value", 
+            "field_name_box_f": "new value", 
+            "field_name_box_1": "new value",
+            "field_name_box_15": "new value", 
+            "field_name_box_20": "new value", 
+        }                        
+    """),
+    tools=[edit_form],
+    model=OpenAIChat(id='gpt-4o'), 
+    knowledge=extract_agent_knowledge_base,
+    search_knowledge=True,  
+    update_knowledge=True,
+    show_tool_calls=True, 
+    debug_mode=True, 
+    storage=storage, 
+    read_chat_history=True,
+)
 
 mapping_agent = Agent(
     name="Mapping Agent", 
@@ -285,34 +286,8 @@ mapping_agent = Agent(
     # storage=storage,
     debug_mode=True,  # Add this to see detailed logs
 )
-# # mistral_api_key = os.getenv('MISTRAL_API_KEY')
-# document_edit_agent = Agent(
-#     name='Document Edit Agent', 
-#     description='You specialize in editing documents', 
-#     model=MistralChat(id='pixtral-12b-2409', api_key=mistral_api_key),
-#     instructions=dedent("""\
-#     "Analyze image documents and detect all form fields where information is missing. For each missing field, return:
-
-#     The field label (if visible).
-#     The bounding box coordinates (x, y, width, height).
-#     Where x, y is the upper left corner of the bounding box coordinate 
-#     Any additional context about the field. 
-                        
-#     Make sure to return the output in JSON format
-#     """),
-#     tools=[],
-#     storage=storage,
-#     read_chat_history=True,
-# )
-
-# app = Playground(agents=[document_upload_agent, document_search_agent]).get_app()
 
 if __name__ == "__main__":
-    # document_upload_agent.print_response(
-    #     "Extract all user information from the documents in the knowledge base. Include names, addresses, phone numbers, email addresses, and any other relevant personal information. Organize the information by individual and add timestamps for each piece of information.", 
-    #     stream=True
-    # )
-    # serve_playground_app("upload_files:app", reload=True, host="0.0.0.0", port=8000)
     
     query_results = {
         "employer_identification_number_box_b": "38-0226974",
