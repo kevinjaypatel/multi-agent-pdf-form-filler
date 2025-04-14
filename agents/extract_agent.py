@@ -200,6 +200,7 @@ document_upload_agent = Agent(
             }
     """),
     model=OpenAIChat(id='gpt-4o'),
+    tool_choice="required",
     knowledge=extract_agent_knowledge_base,             # Provides the agent with a knowledge base to search and update               
     update_knowledge=True,                              # Adds a tool allowing the agent to update the knowledge base
     read_chat_history=True,
@@ -235,6 +236,7 @@ document_search_agent = Agent(
             "field_name_box_20": "new value", 
         }                        
     """),
+    tool_choice="required",
     tools=[edit_form],
     model=OpenAIChat(id='gpt-4o'), 
     knowledge=extract_agent_knowledge_base,
