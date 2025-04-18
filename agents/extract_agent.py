@@ -254,6 +254,26 @@ document_search_agent = Agent(
     read_chat_history=True,
 )
 
+document_agent_team = Team(
+    name='Document Agent Team', 
+    mode='route', 
+    model=OpenAIChat(id='gpt-4o'),
+    members=[
+        document_upload_agent,
+        document_search_agent, 
+    ], 
+    show_tool_calls=True, 
+    markdown=True, 
+    instructions=[
+        "You are a task router that directs questions to the appropriate document agent.", 
+        "If the user asks for a task that can not be supported with one of the document agents, respond with: ",
+        "'I can only achieve the following document tasks: Document Upload, Document Search (for documents that need to be filled). Please clarify your request'",
+        "Always assess the users input before routing to an agent.",
+        "For unsupported requests, respond with the above message.",  
+    ],
+    show_members_responses=True
+)
+
 if __name__ == "__main__":
     
     query_results = {    
