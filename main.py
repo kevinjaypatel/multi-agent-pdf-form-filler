@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Request 
-from fastapi.responses import StreamingResponse 
+from fastapi import FastAPI, Request, UploadFile, Form, File 
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
+
 from pydantic import BaseModel 
 from typing import Dict, Optional, Any 
 import json 
@@ -59,19 +62,54 @@ async def ask(query: str):
 
 
 @app.post("/agno/api/chat")
-async def chat_with_agent(request: Request): 
-    body = await request.json() 
-    print(f"Received body: {body}") 
+async def chat_with_agent(
+    message: str = Form(...), 
+    image: Optional[UploadFile] = File(None)
+): 
+    
+    # You can now do whatever you want with them
+    print("\n--- Received Data ---")
+    print(f"Message: {message}")
 
-    message = body.get('message') 
-    print(f"Received message: {message}")
+    if image: 
+        # Read image contents as bytes 
+        image_bytes = await image.read() 
 
-    result = document_agent_team.run(message)
-    print(f"Response: {result.content}")
+        print(f"Filename: {image.filename}")
+        print(f"Content Type: {image.content_type}")
+        print(f"Size in bytes: {len(image_bytes)}")
 
-    response = json.dumps(result.content)
+        return JSONResponse(
+            content={
+                "status": "success", 
+                "message": message, 
+                "filename: ": image.filename, 
+                "content_type": image.content_type, 
+                "image_size": len(image_bytes)
+            }
+        )
+    else: 
+        print("No image uploaded")
+    
+    return JSONResponse(
+        content={
+            "status": "success", 
+            "message": message, 
+            "image_uploaded": bool(image)
+        }
+    )
+    # body = await request.json() 
+    # print(f"Received body: {body}") 
 
-    return response
+    # message = body.get('message') 
+    # print(f"Received message: {message}")
+
+    # result = document_agent_team.run(message)
+    # print(f"Response: {result.content}")
+
+    # response = json.dumps(result.content)
+
+    # return response
     
     # message = messages[-1]['content'] if messages else "" 
     
