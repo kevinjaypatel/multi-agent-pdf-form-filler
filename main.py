@@ -2,8 +2,9 @@ from fastapi import FastAPI, Request, UploadFile, Form, File
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-
+# Agno
 from agno.agent import Agent
+from agno.media import Image, File as AgnoUploadFile 
 from agno.models.openai import OpenAIChat
 
 from pydantic import BaseModel 
@@ -64,38 +65,77 @@ async def ask(query: str):
 @app.post("/agno/api/chat")
 async def chat_with_agent(
     message: str = Form(...), 
-    image: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None)
 ): 
     
     # You can now do whatever you want with them
     print("\n--- Received Data ---")
     print(f"Message: {message}")
 
-    if image: 
-        # Read image contents as bytes 
-        image_bytes = await image.read() 
+    if file: 
+        # Determine the file type 
+        if file.content_type == "application/pdf":
+            # Process PDF file 
+            print("Received PDF file") 
 
-        print(f"Filename: {image.filename}")
-        print(f"Content Type: {image.content_type}")
-        print(f"Size in bytes: {len(image_bytes)}")
+            pdf_bytes = await file.read() 
 
-        return JSONResponse(
-            content={
-                "status": "success", 
-                "message": message, 
-                "filename: ": image.filename, 
-                "content_type": image.content_type, 
-                "image_size": len(image_bytes)
-            }
-        )
+            response = document_agent_team.run(
+                message,
+                files = [
+                    AgnoUploadFile(content=pdf_bytes)
+                ]
+            )
+
+            print(f"Response: {response.content}")
+            return JSONResponse(
+                content={
+                    "status": "success", 
+                    "message": "Agent response goes here", 
+                }
+            )
+        elif file.content_type == "image/jpeg" or file.content_type == "image/png": 
+            # Read image contents as bytes 
+            image_bytes = await file.read() 
+
+            response = document_agent_team.run(
+                message,
+                images = [
+                    Image(content=image_bytes)
+                ] 
+            ) 
+
+            print(f"Response: {response.content}")
+            return JSONResponse(
+                content={
+                    "status": "success", 
+                    "message": "Agent response goes here", 
+                }
+            )
+        else: 
+            print("Unsupported file type") 
+            
+        # print(f"Filename: {image.filename}")
+        # print(f"Content Type: {image.content_type}")
+        # print(f"Size in bytes: {len(image_bytes)}")
+
+        # return JSONResponse(
+        #     content={
+        #         "status": "success", 
+        #         "message": message, 
+        #         "filename: ": image.filename, 
+        #         "content_type": image.content_type, 
+        #         "image_size": len(image_bytes)
+        #     }
+        # )
     else: 
         print("No image uploaded")
     
     return JSONResponse(
         content={
-            "status": "success", 
+            "status": "OK", 
             "message": message, 
-            "image_uploaded": bool(image)
+            "file_uploaded": bool(file)
         }
     )
     # body = await request.json() 
