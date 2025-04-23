@@ -1,6 +1,14 @@
 ## Extract Agent Prompt  
 Can you please extract and parse the information from this document and add it to your knowledge base?  
 
-## Edit Agent Prompt 
-Can you please find the missing information from this document, and search your knowledge base for the information? 
-Please edit the document when you find the missing information. 
+Extract all user information from this document and store it in the knowledge base
+
+## Search Agent Prompt 
+Here is 2025 w2 form with missing fields for Stephen Chavez. Can you please find the missing information, 
+including the EID, by searching your knowledge base?  
+
+
+## Upload Agent Prompt 
+Here is a w2 form for Stephen Chavez. 
+Please create a user profile for this user by extracting the information from this form and
+adding it to your knowledge base  
