@@ -1,6 +1,8 @@
 from agno.agent import Agent, RunResponse 
 from agno.playground.playground import Playground
 from agno.utils.pprint import pprint_run_response
+from agno.team.team import Team 
+
 from textwrap import dedent
 from agno.storage.postgres import PostgresStorage
 from datetime import datetime
@@ -254,8 +256,28 @@ document_search_agent = Agent(
     read_chat_history=True,
 )
 
-document_agent_team = Team(
-    name='Document Agent Team', 
+document_search_team = Team(
+    name='Document Search Team', 
+    mode='route', 
+    model=OpenAIChat(
+        id='gpt-4o', 
+        temperature=0.0
+    ),  
+    members=[
+        document_search_agent, 
+    ], 
+    show_tool_calls=True, 
+    markdown=False, 
+    instructions=[
+        "Your job is to search the knowledge base for the missing information.",
+        "You MUST return a Python dictionary with string keys and string values.",
+    ],
+    show_members_responses=True
+)
+
+task_classification_agent = Team(
+    name='Task Classification Agent', 
+    # agent_id='document_agent_team', 
     mode='route', 
     model=OpenAIChat(id='gpt-4o'),
     members=[
