@@ -279,18 +279,23 @@ task_classification_agent = Team(
     name='Task Classification Agent', 
     # agent_id='document_agent_team', 
     mode='route', 
-    model=OpenAIChat(id='gpt-4o'),
+    model=OpenAIChat(
+        id='gpt-4o', 
+        temperature=0.0
+    ),
     members=[
         document_upload_agent,
         document_search_agent, 
     ], 
     show_tool_calls=True, 
-    markdown=True, 
+    markdown=False, 
     instructions=[
-        "You are a task router that directs questions to the appropriate document agent.", 
-        "If the user asks for a task that can not be supported with one of the document agents, respond with: ",
-        "'I can only achieve the following document tasks: Document Upload, Document Search (for documents that need to be filled). Please clarify your request'",
-        "Always assess the users input before routing to an agent.",
+        "Your job is to assess user queries and determine the best agent to handle the task.",
+        "Either say, 'Document Upload Agent', or 'Document Search Agent' nothing else. Don't route tasks to the agents.",
+        "Remember, your job is to determine the best agent to do the task, you don't have to route the task to any particular agent, or provide any other information.",  
+        "If the user asks for a task that cannot be supported with one of the agents, respond with: ",
+        "'I can only achieve the following document tasks: Document Upload, or Document Search (for documents that need to be filled). Please clarify your request'",
+        "Always assess the users input before determining what agent can handle the task.",
         "For unsupported requests, respond with the above message.",  
     ],
     show_members_responses=True
