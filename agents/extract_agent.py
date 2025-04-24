@@ -13,19 +13,18 @@ import re
 from agno.models.openai import OpenAIChat
 
 # Knowledge Base 
-from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
+from agents.knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
 
 # Tools 
-from tools.edit_form import edit_form 
-
+from agents.tools.edit_form import edit_form
 
 db_url = "postgresql+psycopg://agno:agno@db/agno"
 agent_model_id = "gpt-4o"
 
-storage = PostgresStorage(
-        table_name="extraction_agent_sessions",
-        db_url=db_url
-)
+# storage = PostgresStorage(
+#         table_name="extraction_agent_sessions",
+#         db_url=db_url
+# )
 
 def find_required_information(document_path: str=None) -> str: 
     """
@@ -142,6 +141,7 @@ def extract_and_store():
 document_upload_agent = Agent(
     name="Document Upload Agent",
     session_id="pdf_document_uploading_session",
+    role="You support creating user profiles", 
     description="You are an expert in analyzing and extracting user information from documents",
     instructions=dedent("""\
         When the user uploads a document:
@@ -212,13 +212,14 @@ document_upload_agent = Agent(
     show_tool_calls=True, 
     markdown=True,
     debug_mode=True,
-    storage=storage
+    # storage=storage
 )
 
 # Document Search Agent 
 document_search_agent = Agent(
     name="Document Search Agent",
     session_id="pdf_document_searching_session",
+    role="You support finding missing information from documents",
     description="You are an expert in analyzing documents and finding missing information from them",
     instructions=dedent("""\    
         1. Extract and parse all missing information from the document 
@@ -232,17 +233,22 @@ document_search_agent = Agent(
                         
         For example, Box 15 in a W2-form is grouped with other fields. 
 
-        5. When calling the edit_form tool, provide a structured JSON object with the following format:
+        5. You MUST return a Python dictionary with string keys and string values. Do not include comments in the output. 
+        The dictionary should look like this:
         {
             "field_name_box_a": "new value", 
             "field_name_box_f": "new value", 
             "field_name_box_1": "new value",
             "field_name_box_15": "new value", 
             "field_name_box_20": "new value", 
-        }                        
+        } 
+        
+        6. Remember not to include any comments in the dictionary output
+        7. Each key in the dictionary should be a field name, and each value should be the corresponding value to fill in.
+        Make sure all values are strings.                        
     """),
-    tool_choice="required",
-    tools=[edit_form],
+    # tool_choice="required",
+    tools=[],
     model=OpenAIChat(
         id='gpt-4o', 
         temperature=0.0
@@ -252,7 +258,7 @@ document_search_agent = Agent(
     update_knowledge=True,
     show_tool_calls=True, 
     debug_mode=True, 
-    storage=storage, 
+    # storage=storage, 
     read_chat_history=True,
 )
 
@@ -303,6 +309,7 @@ task_classification_agent = Team(
 
 if __name__ == "__main__":
     
+    # Search Agent Output  
     query_results = {    
         "employee_social_security_number_box_a": "218-67-7264",
         "employer_identification_number_box_b": "26-7978697",
@@ -311,44 +318,5 @@ if __name__ == "__main__":
         "employee_address_zip_code_box_f": "31126 Parsons Turnpike Apt. 170, East Shaun, IN 99674-9051"
     }
 
-    field_objects = get_form_fields()
-    
-    # Run agent and return the response as a variable
-    response: RunResponse = mapping_agent.run(
-        f"""
-        I need to map form values to form fields.
-        
-        Field objects: {json.dumps(field_objects)}
-        Document metadata: 
-        - Document type: W2 form 2025
-
-        Form values: {json.dumps(query_results)}
-        
-        Please provide the mapping between these values and fields.
-        """
-    )
-    
-    # Print the response in markdown format
-    response_content = response.content 
-
-    # Extract just the JSON part using regex
-    json_match = re.search(r'```json\s*({[\s\S]*?})\s*```', response_content)
-    if json_match:
-        json_str = json_match.group(1)
-        response_dict = json.loads(json_str)
-        result = edit_form(response_dict)
-        print(result)
-    else:
-        print("No JSON found in response")
-
-    # Remove the markdown code block markers and any whitespace
-    # json_str = response_content.strip('```json').strip('```').strip()
-    # print(json_str)
-    # Parse the JSON string into a dictionary 
-    # response_dict = json.loads(json_str)
-
-    # pprint_run_response(response, markdown=True)
-
-    # Write the data to the file 
-    # result = edit_form(response_dict)
-    # print(result)
+    result = edit_form(query_results) 
+    print(result)
