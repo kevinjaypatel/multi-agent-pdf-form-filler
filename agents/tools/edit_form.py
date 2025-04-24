@@ -6,23 +6,27 @@ import re
 from typing import Dict
 from textwrap import dedent
 from pathlib import Path 
+from io import BytesIO 
 
 from pypdf import PdfReader, PdfWriter 
 from pypdf.constants import AnnotationDictionaryAttributes
 
 from agno.agent import Agent  
 from agno.models.openai import OpenAIChat
+from agno.media import Image, File
+
+from fastapi import UploadFile
 
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
 image_path = "input/data/image/w2_unfilled.jpg" 
-# pdf_path = "agents/tools/input/data/pdf/fw2/fw2-pages-3.pdf"
-# output_path = "agents/tools/output/pypdf"
 
-output_path = "tools/output/pypdf"
-pdf_path = "tools/input/data/pdf/fw2/fw2-pages-3.pdf"
+pdf_path = "agents/tools/input/data/pdf/fw2/fw2-pages-3.pdf"
+output_path = "agents/tools/output/pypdf"
+
+# pdf_path = "tools/input/data/pdf/fw2/fw2-pages-3.pdf"
+# output_path = "tools/output/pypdf"
 
 # Mapping Agent as Tool 
 mapping_agent = Agent(
@@ -249,86 +253,76 @@ mapping_agent = Agent(
     debug_mode=True,  # Add this to see detailed logs
 )
 
-def edit_form(new_values: Dict[str, str]) -> str:
+async def edit_form(file_stream: BytesIO, search_results: Dict[str, str] = None):
     """
     Fill out a PDF form with the provided values.
     
     Args:
-        new_values: A dictionary mapping field names to their values
-        pdf_path: Optional path to the PDF file (uses default if not provided)
+        file_stream: A BytesIO object containing the PDF file
+        search_results: A dictionary mapping field names to their values
         
     Returns:
-        str: Path to the filled out PDF
+        BytesIO: A stream containing the filled out PDF
     """
-        
-    try:
+    if not file_stream: 
+        raise ValueError("No file stream available to edit")
+    
+    if not search_results: 
+        raise ValueError("No search results available to edit the form")
 
-        # Get absolute path to ensure we're looking in the right place
-        abs_pdf_path = os.path.abspath(pdf_path)
+    reader = PdfReader(file_stream) 
+    form_fields = reader.get_form_text_fields() 
+    
+    # Acquire the form field mappings   
+    mappings = get_form_mappings(form_fields, search_results) 
+    print("Mappings received (T/F):", mappings is not None)
+    
+    if not mappings: 
+        raise ValueError("No mappings were found for the document")
 
-        # print(f"Current working directory: {os.getcwd()}")
-        # print(f"Attempting to open PDF at: {abs_pdf_path}")
+    # Convert mappings to lists
+    field_names = list(mappings.keys())
+    field_values = list(mappings.values())
+    
+    # Write to the PDF Form Document  
+    writer = PdfWriter() 
+    writer.append(reader) 
 
-        reader = PdfReader(abs_pdf_path) 
-        if (reader is not None): 
-            # Reads the form fields  
-            print("Getting form mappings...")
-            mappings = get_form_mappings(new_values) 
-            print("Mappings received:", mappings is not None)
-            
-            if (mappings): 
-                # Convert mappings to lists
-                field_names = list(mappings.keys())
-                field_values = list(mappings.values())
-                
-                # Write to the PDF form document  
-                writer = PdfWriter() 
-                writer.append(reader) 
+    # Write a value in for each field name 
+    for i, field_name in enumerate(field_names):
+        writer.update_page_form_field_values(
+            writer.pages[0], 
+            {field_name: field_values[i]}, 
+            auto_regenerate=False,
+        )
 
-                # Update form fields
-                for i, field_name in enumerate(field_names):
-                    writer.update_page_form_field_values(
-                        writer.pages[0], 
-                        {field_name: field_values[i]}, 
-                        auto_regenerate=False,
-                    )
+    # Write the data to an output buffer 
+    output_stream = BytesIO() 
+    writer.write(output_stream)  
+    output_stream.seek(0) 
 
-                # output_dir = 'output/pypdf'
-                os.makedirs(output_path, exist_ok=True)
-                
-                new_file_count = len(list(Path(output_path).glob('*.pdf'))) + 1
-                new_file_name = f'filled-out-{new_file_count}.pdf'
-                
-                # print("New File Count: " + str(new_file_count))
-                # print("New File Name: " + new_file_name)
-
-                full_output_path = os.path.join(output_path, new_file_name)
-
-                with open(full_output_path, "wb") as output_stream: 
-                    writer.write(output_stream) 
-
-                return f'The form has been filled out and saved to {full_output_path}'
-
-            else: 
-                return "No mappings were found"
-
-        else: 
-            return "No PDF file found"
-        
-    except Exception as e:
-        return f"Error processing PDF: {str(e)}"
+    return output_stream
 
 # Call the mapping agent to get the mapped output
-def get_form_mappings(query_results: Dict[str, str]):
-     
-    field_objects = get_form_fields() 
+def get_form_mappings(form_fields: Dict[str, str], query_results: Dict[str, str]):
+    """
+    Calls the mapping agent to get mappings of field names to values 
+    
+    Args:
+        query_results: A dictionary of search results from the search agent 
+        form_fields: A dictionary of form fields from the PDF file 
+        
+    Returns:
+        A dictionary of field names to values 
+    """
+    # field_objects = get_form_fields(form) 
         
      # Run agent and return the response as a variable
     response: RunResponse = mapping_agent.run(
         f"""
         I need to map form values to form fields.
         
-        PDF Field Names: {json.dumps(field_objects)}
+        PDF Field Names: {json.dumps(form_fields)}
         Document metadata: 
         - Document type: W2 form 2025
 
@@ -369,8 +363,9 @@ def read_form_fields(pdf_path: str=pdf_path):
 
     print(formatted_output)
     
-def get_form_fields(): 
-    reader = PdfReader(pdf_path)   
+def get_form_fields(form: File): 
+    # reader = PdfReader(pdf_path)
+    reader = PdfReader(form)   
     fields = reader.get_form_text_fields() 
 
     return fields
