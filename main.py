@@ -1,20 +1,22 @@
-from fastapi import FastAPI, Request, UploadFile, Form, File 
+# FastAPI
+from fastapi import FastAPI, UploadFile, Form, File 
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Agno
-from agno.agent import Agent
 from agno.media import Image, File as AgnoUploadFile 
-from agno.models.openai import OpenAIChat
 
 from pydantic import BaseModel 
 from typing import Dict, Optional, Any 
 import json 
+from io import BytesIO 
+import re 
 
 # Extract Agent 
-from agents.extract_agent import document_agent_team
-from workflow.image_document_editor import ImageDocumentEditor
-# from workflow.chat_assistant_workflow import ChatAssistantWorkflow
+from agents.extract_agent import task_classification_agent, document_upload_agent, document_search_team
+
+# Tools 
+from agents.tools.edit_form import edit_form 
 
 app = FastAPI()
 
@@ -28,21 +30,18 @@ app.add_middleware(
     expose_headers=["*"], 
 )
 
+# Define agent names as constants
+DOCUMENT_UPLOAD_AGENT = "Document Upload Agent"
+DOCUMENT_SEARCH_AGENT = "Document Search Agent"
+
 class ChatRequest(BaseModel): 
     message: str 
     conversation_id: Optional[str] = None 
     metadata: Optional[Dict[str, Any]] = None 
 
-agent = Agent(
-    model=OpenAIChat(id="gpt-4o"),
-    description="You are a helpful assistant.",
-    markdown=True,
-
-)
-
 async def generate_stream(message, conversation_id=None, metadata=None): 
     """Generate a stream of responses from the agent."""
-    response_stream = document_agent_team.run(
+    response_stream = task_classification_agent.run(
         message, 
         conversation_id=conversation_id,  
         metadata=metadata,  
@@ -56,106 +55,107 @@ async def generate_stream(message, conversation_id=None, metadata=None):
 
     yield f"data: {json.dumps({'content': '[DONE]'})}\n\n" 
 
-@app.get("/ask")
-async def ask(query: str):
-    response = extraction_agent.run(query)
-    return {"response": response.content}
-
-
 @app.post("/agno/api/chat")
 async def chat_with_agent(
     message: str = Form(...), 
     file: Optional[UploadFile] = File(None)
 ): 
-    
-    # You can now do whatever you want with them
     print("\n--- Received Data ---")
-    print(f"Message: {message}")
+    print(f"User: {message}")
 
-    if file: 
-        # Determine the file type 
-        if file.content_type == "application/pdf":
-            # Process PDF file 
-            print("Received PDF file") 
+    try: 
+        # Determine which agent will handle the task 
+        response = task_classification_agent.run(message)
+        print(f"Task relayed to: {response.content}")
 
-            pdf_bytes = await file.read() 
+        if file: 
+            # Validate file size (e.g., 10MB limit)
+            if file.size > 10 * 1024 * 1024:  # 10MB in bytes
+                raise ValueError("File size exceeds 10MB limit")
 
-            response = document_agent_team.run(
-                message,
-                files = [
-                    AgnoUploadFile(content=pdf_bytes)
-                ]
-            )
+            file_bytes = await file.read()  
+            if (response.content == DOCUMENT_UPLOAD_AGENT):
+                run_result = document_upload_agent.run(
+                    message, 
+                    images = [
+                        Image(content=file_bytes)
+                    ]
+                )
+                print(f"Document Upload Agent Response: {run_result.content}")
+                return JSONResponse(
+                    content={
+                        "status": "OK", 
+                        "agent_response": f"{run_result.content}", 
+                    }
+                )
 
-            print(f"Response: {response.content}")
-            return JSONResponse(
-                content={
-                    "status": "success", 
-                    "message": "Agent response goes here", 
-                }
-            )
-        elif file.content_type == "image/jpeg" or file.content_type == "image/png": 
-            # Read image contents as bytes 
-            image_bytes = await file.read() 
+            elif (response.content == DOCUMENT_SEARCH_AGENT):
+                if (file.content_type != "application/pdf"):
+                    raise ValueError(f"File must be a PDF for {DOCUMENT_SEARCH_AGENT}")
+                
+                print(f"Running: {DOCUMENT_SEARCH_AGENT}")
+                run_result = document_search_team.run(
+                    message, 
+                    files = [
+                        AgnoUploadFile(content=file_bytes)
+                    ]
+                )
+                 
+                search_agent_results = run_result.content
 
-            response = document_agent_team.run(
-                message,
-                images = [
-                    Image(content=image_bytes)
-                ] 
-            ) 
+                # Parse the output from the search agent 
+                dict_pattern = r'```python\s*({[\s\S]*?})\s*```' 
+                dict_match = re.search(dict_pattern, search_agent_results)
+                if not dict_match:
+                    raise ValueError("No dictionary of search results found in the response")
 
-            print(f"Response: {response.content}")
-            return JSONResponse(
-                content={
-                    "status": "success", 
-                    "message": "Agent response goes here", 
-                }
-            )
-        else: 
-            print("Unsupported file type") 
+                dict_str = dict_match.group(1)
+                dict_str = dict_str.replace("'", '"')
+                query_results = json.loads(dict_str)
+
+                # Create a new BytesIO object with the file bytes
+                file_stream = BytesIO(file_bytes)
+                output_stream = await edit_form(file_stream, query_results) 
+
+                return StreamingResponse(output_stream, media_type="application/pdf", headers={
+                    "Content-Disposition": f"attachment; filename={file.filename}_filled.pdf"
+                })
             
-        # print(f"Filename: {image.filename}")
-        # print(f"Content Type: {image.content_type}")
-        # print(f"Size in bytes: {len(image_bytes)}")
-
-        # return JSONResponse(
-        #     content={
-        #         "status": "success", 
-        #         "message": message, 
-        #         "filename: ": image.filename, 
-        #         "content_type": image.content_type, 
-        #         "image_size": len(image_bytes)
-        #     }
-        # )
-    else: 
-        print("No image uploaded")
+            else: 
+                return JSONResponse(
+                    content={
+                        "status": "OK", 
+                        "agent_response": f"{response.content}",
+                        "information": f"Please clarify your request for the appropriate agent", 
+                    }
+                )
+                
+        else: 
+            return JSONResponse(
+                content={
+                    "status": "OK", 
+                    "agent_response": f"{response.content}",
+                    "information": f"No file(s) were uploaded", 
+                }
+            )
+        
+    except ValueError as ve: 
+        return JSONResponse(
+            content={
+                "status": "ERROR", 
+                "message": f"Validation error: {str(ve)}"
+            },
+            status_code=400
+        )
     
-    return JSONResponse(
-        content={
-            "status": "OK", 
-            "message": message, 
-            "file_uploaded": bool(file)
-        }
-    )
-    # body = await request.json() 
-    # print(f"Received body: {body}") 
-
-    # message = body.get('message') 
-    # print(f"Received message: {message}")
-
-    # result = document_agent_team.run(message)
-    # print(f"Response: {result.content}")
-
-    # response = json.dumps(result.content)
-
-    # return response
-    
-    # message = messages[-1]['content'] if messages else "" 
-    
-    # conversation_id = body.get("conversation_id") or body.get("id")
-    # metadata = body.get("metadata") 
-
+    except Exception as e: 
+        return JSONResponse(
+            content={
+                "status": "ERROR", 
+                "message": f"Error processing request: {str(e)}"
+            },
+            status_code=500
+        )
     # print(f"Received message: {message}")
     # return StreamingResponse(
     #     # generate_stream(message, conversation_id, metadata),
@@ -164,25 +164,3 @@ async def chat_with_agent(
     # )
 
 
-# def main():
-#     # Create specialized agents
-#     specialized_agents = [
-#         document_upload_agent,
-#         document_search_agent,
-#         ImageDocumentEditor().image_document_editor
-#     ]
-    
-#     # Initialize the chat assistant workflow
-#     workflow = ChatAssistantWorkflow(specialized_agents)
-    
-#     # Example usage
-#     while True:
-#         user_input = input("You: ")
-#         if user_input.lower() in ['quit', 'exit', 'bye']:
-#             break
-            
-#         response = workflow.run_workflow(user_input)
-#         print(f"Assistant: {response}")
-
-# if __name__ == "__main__":
-#     main()
