@@ -2,3 +2,4 @@
 agents/upload_files/
 agents/rag_agent.py 
 .DS_Store
+agents/images/

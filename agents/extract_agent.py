@@ -13,7 +13,7 @@ from agno.models.mistral import MistralChat
 # Agent Tools 
 from agno.tools.dalle import DalleTools 
 from PIL import Image, ImageDraw, ImageFont 
-from tools.edit_form import draw_bounding_boxes
+# from tools.edit_form import draw_bounding_boxes
 
 # Import the shared knowledge base and extracted_info_kb
 from knowledge.combined_knowledge import knowledge_base as extract_agent_knowledge_base
