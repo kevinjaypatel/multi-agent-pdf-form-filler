@@ -1,13 +1,15 @@
 # FastAPI
-from fastapi import FastAPI, UploadFile, Form, File 
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Agno
+from agno.agent import RunResponse, Agent 
 from agno.media import Image, File as AgnoUploadFile 
+from agno.run.response import RunEvent 
 
 from pydantic import BaseModel 
-from typing import Dict, Optional, Any 
+from typing import Dict, Optional, Any, Iterator, AsyncGenerator, List   
 import json 
 from io import BytesIO 
 import re 
@@ -17,6 +19,9 @@ from agents.extract_agent import task_classification_agent, document_upload_agen
 
 # Tools 
 from agents.tools.edit_form import edit_form 
+
+from utils.prompt import convert_to_agno_message
+from utils.types import ClientMessage, AgnoMessage
 
 app = FastAPI()
 
@@ -39,7 +44,10 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None 
     metadata: Optional[Dict[str, Any]] = None 
 
-async def generate_stream(message, conversation_id=None, metadata=None): 
+class Request(BaseModel): 
+    messages: List[ClientMessage]
+
+async def generate_stream(response_stream: Iterator[RunResponse], conversation_id=None, metadata=None): 
     """Generate a stream of responses from the agent."""
     response_stream = task_classification_agent.run(
         message, 
@@ -148,19 +156,49 @@ async def chat_with_agent(
             status_code=400
         )
     
-    except Exception as e: 
-        return JSONResponse(
-            content={
-                "status": "ERROR", 
-                "message": f"Error processing request: {str(e)}"
-            },
-            status_code=500
-        )
-    # print(f"Received message: {message}")
-    # return StreamingResponse(
-    #     # generate_stream(message, conversation_id, metadata),
-    #     generate_stream(message),  
-    #     media_type="text/event-stream"
-    # )
+#     except Exception as e: 
+#         return JSONResponse(
+#             content={
+#                 "status": "ERROR", 
+#                 "message": f"Error processing request: {str(e)}"
+#             },
+#             status_code=500
+#         )
+    
+def stream_response(message: List[AgnoMessage], protocol: str = 'data'): 
+    # Get the streamed response from the agent 
+    
+    # Create a new Form Data instance (debugging)
+    message_str = "What is your special skill"
+    stream = task_classification_agent.run(
+        message_str, 
+        stream=True,        
+    )
+
+    # Stream Text Response 
+    if protocol == 'text': 
+        print("Text protocol")
+    
+    # Stream Data Response 
+    elif protocol == 'data': 
+        print("Data protocol") 
+
+    for chunk in stream: 
+            content = chunk.content
+            if content: 
+                yield "0:{text}\n".format(text=json.dumps(content))
+ 
+@app.post("/agno/api/chat") 
+async def handle_chat_data(request: Request): 
+    messages = request.messages 
+
+    # Convert the messages to be handled by the agno agents
+    agno_message = convert_to_agno_message(messages) 
+
+    response = StreamingResponse(stream_response(agno_message))  
+    response.headers['x-vercel-ai-data-stream'] = 'v1' 
+    return response 
+
+
 
 
