@@ -1,5 +1,5 @@
 # FastAPI
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, Form  
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,6 +13,8 @@ from typing import Dict, Optional, Any, Iterator, AsyncGenerator, List
 import json 
 from io import BytesIO 
 import re 
+import base64
+import logging
 
 # Extract Agent 
 from agents.extract_agent import task_classification_agent, document_upload_agent, document_search_team
@@ -22,6 +24,7 @@ from agents.tools.edit_form import edit_form
 
 from utils.prompt import convert_to_agno_message
 from utils.types import ClientMessage, AgnoMessage
+from utils.form_service import FormFillingService
 
 app = FastAPI()
 
@@ -39,6 +42,13 @@ app.add_middleware(
 DOCUMENT_UPLOAD_AGENT = "Document Upload Agent"
 DOCUMENT_SEARCH_AGENT = "Document Search Agent"
 
+# Initialize the service
+form_filling_service = FormFillingService()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 class ChatRequest(BaseModel): 
     message: str 
     conversation_id: Optional[str] = None 
@@ -46,148 +56,117 @@ class ChatRequest(BaseModel):
 
 class Request(BaseModel): 
     messages: List[ClientMessage]
-
-async def generate_stream(response_stream: Iterator[RunResponse], conversation_id=None, metadata=None): 
-    """Generate a stream of responses from the agent."""
-    response_stream = task_classification_agent.run(
-        message, 
-        conversation_id=conversation_id,  
-        metadata=metadata,  
-        stream=True
-    )
-
-    for chunk in response_stream: 
-        if hasattr(chunk, 'content') and chunk.content: 
-              # Format as SSE (Server-Sent Events)
-            yield f"data: {json.dumps({'content': chunk.content})}\n\n" 
-
-    yield f"data: {json.dumps({'content': '[DONE]'})}\n\n" 
-
-@app.post("/agno/api/chat")
-async def chat_with_agent(
-    message: str = Form(...), 
-    file: Optional[UploadFile] = File(None)
-): 
-    print("\n--- Received Data ---")
-    print(f"User: {message}")
-
-    try: 
-        # Determine which agent will handle the task 
-        response = task_classification_agent.run(message)
-        print(f"Task relayed to: {response.content}")
-
-        if file: 
-            # Validate file size (e.g., 10MB limit)
-            if file.size > 10 * 1024 * 1024:  # 10MB in bytes
-                raise ValueError("File size exceeds 10MB limit")
-
-            file_bytes = await file.read()  
-            if (response.content == DOCUMENT_UPLOAD_AGENT):
-                run_result = document_upload_agent.run(
-                    message, 
-                    images = [
-                        Image(content=file_bytes)
-                    ]
-                )
-                print(f"Document Upload Agent Response: {run_result.content}")
-                return JSONResponse(
-                    content={
-                        "status": "OK", 
-                        "agent_response": f"{run_result.content}", 
-                    }
-                )
-
-            elif (response.content == DOCUMENT_SEARCH_AGENT):
-                if (file.content_type != "application/pdf"):
-                    raise ValueError(f"File must be a PDF for {DOCUMENT_SEARCH_AGENT}")
-                
-                print(f"Running: {DOCUMENT_SEARCH_AGENT}")
-                run_result = document_search_team.run(
-                    message, 
-                    files = [
-                        AgnoUploadFile(content=file_bytes)
-                    ]
-                )
-                 
-                search_agent_results = run_result.content
-
-                # Parse the output from the search agent 
-                dict_pattern = r'```python\s*({[\s\S]*?})\s*```' 
-                dict_match = re.search(dict_pattern, search_agent_results)
-                if not dict_match:
-                    raise ValueError("No dictionary of search results found in the response")
-
-                dict_str = dict_match.group(1)
-                dict_str = dict_str.replace("'", '"')
-                query_results = json.loads(dict_str)
-
-                # Create a new BytesIO object with the file bytes
-                file_stream = BytesIO(file_bytes)
-                output_stream = await edit_form(file_stream, query_results) 
-
-                return StreamingResponse(output_stream, media_type="application/pdf", headers={
-                    "Content-Disposition": f"attachment; filename={file.filename}_filled.pdf"
-                })
-            
-            else: 
-                return JSONResponse(
-                    content={
-                        "status": "OK", 
-                        "agent_response": f"{response.content}",
-                        "information": f"Please clarify your request for the appropriate agent", 
-                    }
-                )
-                
-        else: 
-            return JSONResponse(
-                content={
-                    "status": "OK", 
-                    "agent_response": f"{response.content}",
-                    "information": f"No file(s) were uploaded", 
-                }
-            )
+                    
+def parse_message_content(message: List[AgnoMessage]) -> tuple[str, list[Image], list[AgnoUploadFile]]:
+    """
+    Parse the message content to extract text, images, and files.
+    
+    Args:
+        message: List of AgnoMessage objects
         
-    except ValueError as ve: 
-        return JSONResponse(
-            content={
-                "status": "ERROR", 
-                "message": f"Validation error: {str(ve)}"
-            },
-            status_code=400
+    Returns:
+        tuple containing:
+        - message_str: The text content of the message
+        - images: List of Image objects
+        - files: List of AgnoUploadFile objects
+    """
+    last_message = message[-1]
+    message_str = ""
+    images = []
+    files = []
+    
+    for part in last_message.content:
+        if part['type'] == 'text':
+            message_str += part['text']
+        elif part['type'] == 'image':
+            images.append(Image(content=part['image']))
+        elif part['type'] == 'document':
+            files.append(AgnoUploadFile(content=part['document']))
+            
+    return message_str, images, files
+
+async def stream_response(message: List[AgnoMessage], protocol: str = 'data'): 
+    try:
+        logger.info("Starting stream response processing")
+        
+        # Parse message content
+        message_str, images, files = parse_message_content(message)
+        logger.info(f"Parsed message content - Text length: {len(message_str)}, Images: {len(images)}, Files: {len(files)}")
+        
+        # If no files or images, just stream the task classification response
+        if not files and not images:
+            logger.info("No files or images found, using task classification agent")
+            run_response: Iterator[RunResponse] = task_classification_agent.run(
+                message_str,
+                stream=True,
+            )
+            for chunk in run_response:
+                if chunk.content:
+                    yield "0:{text}\n".format(text=json.dumps(chunk.content))
+            return
+
+        # Determine which agent will handle the task
+        logger.info("Determining agent type for task")
+        run_response: RunResponse = task_classification_agent.run(
+            message_str,
         )
-    
-#     except Exception as e: 
-#         return JSONResponse(
-#             content={
-#                 "status": "ERROR", 
-#                 "message": f"Error processing request: {str(e)}"
-#             },
-#             status_code=500
-#         )
-    
-def stream_response(message: List[AgnoMessage], protocol: str = 'data'): 
-    # Get the streamed response from the agent 
-    
-    # Create a new Form Data instance (debugging)
-    message_str = "What is your special skill"
-    stream = task_classification_agent.run(
-        message_str, 
-        stream=True,        
-    )
+        logger.info(f"Run response: {run_response}")
+        
+        # Get the first response to determine which agent to use
+        agent_type = run_response.content
+        if not agent_type:
+            logger.warning("No agent type determined, defaulting to general chat")
+        logger.info(f"Selected agent type: {agent_type}")
 
-    # Stream Text Response 
-    if protocol == 'text': 
-        print("Text protocol")
-    
-    # Stream Data Response 
-    elif protocol == 'data': 
-        print("Data protocol") 
+        # Handle document search case
+        if agent_type == DOCUMENT_SEARCH_AGENT:
+            if not files:
+                logger.error(f"No PDF file provided for {DOCUMENT_SEARCH_AGENT}")
+                raise ValueError(f"No PDF file provided for {DOCUMENT_SEARCH_AGENT}")
+            
+            logger.info("Processing form with document search agent")
+            result = await form_filling_service.process_form(message_str, files[0].content)
+            logger.info("Form processing completed successfully")
+            logger.info(f"Result: {result}")
+            yield "k:{file_part}\n".format(file_part=json.dumps(result))
 
-    for chunk in stream: 
-            content = chunk.content
-            if content: 
-                yield "0:{text}\n".format(text=json.dumps(content))
- 
+        # Handle document upload case
+        elif agent_type == DOCUMENT_UPLOAD_AGENT or agent_type == 'Upload Agent':
+            if not images:
+                logger.error(f"No image file provided for {DOCUMENT_UPLOAD_AGENT}")
+                raise ValueError(f"No image file provided for {DOCUMENT_UPLOAD_AGENT}")
+            
+            logger.info("Processing with document upload agent")
+            run_result: Iterator[RunResponse] = document_upload_agent.run(
+                message_str,
+                images=images,
+                stream=True
+            )
+            
+            for chunk in run_result:
+                if chunk.content:
+                    yield "0:{text}\n".format(text=json.dumps(chunk.content))
+
+        # Handle general chat case
+        else:
+            logger.info("Using general chat response")
+            for chunk in run_response:
+                if chunk.content:
+                    yield "0:{text}\n".format(text=json.dumps(chunk.content))
+
+    except ValueError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        yield "0:{text}\n".format(text=json.dumps({
+            "error": f"Validation error: {str(ve)}",
+            "status": "ERROR"
+        }))
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        yield "0:{text}\n".format(text=json.dumps({
+            "error": f"Error processing request: {str(e)}",
+            "status": "ERROR"
+        }))
+
 @app.post("/agno/api/chat") 
 async def handle_chat_data(request: Request): 
     messages = request.messages 
