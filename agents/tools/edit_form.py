@@ -2,6 +2,7 @@ import os
 import numpy as np 
 import json
 import re
+import base64
 
 from typing import Dict
 from textwrap import dedent
@@ -253,22 +254,25 @@ mapping_agent = Agent(
     debug_mode=True,  # Add this to see detailed logs
 )
 
-async def edit_form(file_stream: BytesIO, search_results: Dict[str, str] = None):
+async def edit_form(file_bytes: bytes, search_results: Dict[str, str] = None) -> str:
     """
-    Fill out a PDF form with the provided values.
+    Fills out a PDF form with the search results.
     
     Args:
-        file_stream: A BytesIO object containing the PDF file
-        search_results: A dictionary mapping field names to their values
+        file_bytes: Raw bytes of the PDF file
+        search_results: A dictionary mapping (currently W2) field names to their values
         
     Returns:
-        BytesIO: A stream containing the filled out PDF
+        str: A base64 encoded string containing the filled out PDF form 
     """
-    if not file_stream: 
-        raise ValueError("No file stream available to edit")
+    if not file_bytes: 
+        raise ValueError("No file data available to edit")
     
     if not search_results: 
         raise ValueError("No search results available to edit the form")
+
+    # Create BytesIO from raw bytes
+    file_stream = BytesIO(file_bytes)
 
     reader = PdfReader(file_stream) 
     form_fields = reader.get_form_text_fields() 
@@ -301,7 +305,8 @@ async def edit_form(file_stream: BytesIO, search_results: Dict[str, str] = None)
     writer.write(output_stream)  
     output_stream.seek(0) 
 
-    return output_stream
+    # Convert the filled PDF to base64
+    return base64.b64encode(output_stream.getvalue()).decode('utf-8')
 
 # Call the mapping agent to get the mapped output
 def get_form_mappings(form_fields: Dict[str, str], query_results: Dict[str, str]):
